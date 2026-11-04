@@ -37,13 +37,15 @@ def season_of(dt):
 
 # random weather, changes every 3 hours, weighted by season
 WEATHER_ODDS = {
-    "spring": {"klar": 35, "wolkig": 30, "regen": 25, "gewitter": 10},
-    "summer": {"klar": 45, "wolkig": 25, "regen": 10, "gewitter": 20},
-    "autumn": {"klar": 25, "wolkig": 30, "regen": 20, "nebel": 25},
-    "winter": {"klar": 30, "wolkig": 20, "schnee": 35, "nebel": 15},
+    "spring": {"clear": 35, "cloudy": 30, "rain": 25, "storm": 10},
+    "summer": {"clear": 45, "cloudy": 25, "rain": 10, "storm": 20},
+    "autumn": {"clear": 25, "cloudy": 30, "rain": 20, "fog": 25},
+    "winter": {"clear": 30, "cloudy": 20, "snow": 35, "fog": 15},
 }
-OVERCAST = {"klar": 0, "wolkig": .4, "regen": .62, "gewitter": .8, "nebel": .5, "schnee": .68}
-SEASON_DE = {"spring": "fr\u00fchling", "summer": "sommer", "autumn": "herbst", "winter": "winter"}
+OVERCAST = {"clear": 0, "cloudy": .4, "rain": .62, "storm": .8, "fog": .5, "snow": .68}
+SEASON_NAME = {"spring": "spring", "summer": "summer", "autumn": "autumn", "winter": "winter"}
+# older configs used German weather names
+LEGACY_WEATHER = {"klar": "clear", "wolkig": "cloudy", "regen": "rain", "gewitter": "storm", "nebel": "fog", "schnee": "snow"}
 
 
 def weather_of(dt, season):
@@ -192,12 +194,12 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
     season = season or season_of(now_utc)
     weather = weather or weather_of(now_utc, season)
     ov = OVERCAST[weather]
-    wind = {"klar": .2, "wolkig": .5, "regen": .9, "gewitter": 1.6, "nebel": 0, "schnee": .4}[weather]
+    wind = {"clear": .2, "cloudy": .5, "rain": .9, "storm": 1.6, "fog": 0, "snow": .4}[weather]
     S = SEASON[season]
     p = sky(elev)
     if ov:
         _nf = max(0.0, min(1.0, (3 - elev) / 11))
-        grey = mix("#6c7480" if weather == "gewitter" else "#97a0ab" if weather == "regen" else "#a3abb5", "#151820", _nf)
+        grey = mix("#6c7480" if weather == "storm" else "#97a0ab" if weather == "rain" else "#a3abb5", "#151820", _nf)
         for k in ("top", "mid", "bot", "haze", "mtn"):
             p[k] = mix(p[k], grey, ov * (1.1 if k == "top" else .85))
         if _nf < .6:
@@ -300,7 +302,7 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
         o.append(f'<path d="{caps}" fill="{p["msnow"]}" opacity=".92"/>')
     # puffy clouds: shadowed base + lit top, drifting at different speeds
     wr = random.Random(f"{weather}-{now_utc:%Y%m%d}")
-    n_cl = {"klar": 0 if nf > .5 else 3, "wolkig": 7, "regen": 2, "gewitter": 0, "nebel": 4, "schnee": 0}[weather]
+    n_cl = {"clear": 0 if nf > .5 else 3, "cloudy": 7, "rain": 2, "storm": 0, "fog": 4, "snow": 0}[weather]
 
     def puff(rr, w):
         """Cumulus: bell-shaped stack of lumps on a soft rounded base, no flat edges."""
@@ -336,8 +338,8 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
     o.append(f'<rect y="135" width="{W}" height="110" fill="url(#fog)"/>')
 
     # storm / rain cloud deck: three seamless layers rolling at different speeds
-    if weather in ("regen", "gewitter", "schnee"):
-        storm = weather == "gewitter"
+    if weather in ("rain", "storm", "snow"):
+        storm = weather == "storm"
 
         def deck_path(seed, yb, amp, rmin, rmax):
             rr = random.Random(seed)
@@ -356,8 +358,8 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
                     d += f" A{r:.1f} {r * .62:.1f} 0 0 1 {x:.1f} {ys[i - 1]:.1f}"
             return d + " V-5Z"
 
-        top_c = mix("#7d8693" if storm else "#c9d0d8" if weather == "schnee" else "#b3bcc7", "#141821", nf)
-        bot_c = mix("#2f3540" if storm else "#a2abb6" if weather == "schnee" else "#7b8592", "#07090d", nf)
+        top_c = mix("#7d8693" if storm else "#c9d0d8" if weather == "snow" else "#b3bcc7", "#141821", nf)
+        bot_c = mix("#2f3540" if storm else "#a2abb6" if weather == "snow" else "#7b8592", "#07090d", nf)
         layers = [(98, 10, 24, 42, 170, .55), (84, 13, 30, 56, 115, .8), (66, 11, 38, 66, 75, 1)]
         for li, (yb, amp, r1, r2, dur, op) in enumerate(layers):
             o[1] = o[1].replace("</defs>", f'<linearGradient id="dk{li}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="{yb + amp}">'
@@ -378,7 +380,7 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
 
     # lightning: jagged bolts with branches, strike behind the treeline
     flashes = []
-    if weather == "gewitter":
+    if weather == "storm":
         lr = random.Random(f"bolt-{now_utc:%Y%m%d%H}")
 
         def walk(x, y, y_end, step, spread):
@@ -528,7 +530,7 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
                      f'<g class="{sway}" style="animation-duration:{rnd.uniform(2.5, 5):.1f}s;animation-delay:-{rnd.uniform(0, 5):.1f}s">'
                      f'{make(x)}</g></g>')
 
-    if weather == "schnee":
+    if weather == "snow":
         for n, a, b, op, spd, sw in ((120, .7, 1.3, .55, (14, 22), "sa"), (80, 1.4, 2.3, .8, (9, 14), "sa"), (30, 2.6, 4.0, .95, (5.5, 8.5), "sb")):
             falling(n, lambda x, a=a, b=b, op=op: f'<circle cx="{x:.0f}" cy="0" r="{rnd.uniform(a, b):.1f}" fill="#fff" opacity="{op}"/>', spd, sw)
     elif season in ("autumn", "spring") and spawn:
@@ -544,28 +546,28 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
                      f'<ellipse class="sp" style="animation-duration:{rnd.uniform(2, 5):.1f}s" rx="2.6" ry="1.5" fill="{T(rnd.choice(cols))}"/>')
             o.append(f'<g transform="translate({x:.0f} {y:.0f})"><g class="{rnd.choice(["la", "lb", "lc"])}" '
                      f'style="animation-duration:{dur:.1f}s;animation-delay:-{rnd.uniform(0, dur):.1f}s">{shape}</g></g>')
-    if season in ("summer", "spring") and nf > .45 and weather in ("klar", "wolkig"):
+    if season in ("summer", "spring") and nf > .45 and weather in ("clear", "cloudy"):
         for _ in range(30 if season == "summer" else 12):
             x, y = rnd.uniform(0, W), rnd.uniform(215, 300)
             o.append(f'<circle class="ff" cx="{x:.0f}" cy="{y:.0f}" r="1.6" fill="#e9ff8a" '
                      f'style="animation-duration:{rnd.uniform(2, 4):.1f}s;animation-delay:-{rnd.uniform(0, 4):.1f}s"/>')
 
     # weather effects
-    if weather in ("regen", "gewitter"):
-        for _ in range(140 if weather == "gewitter" else 95):
+    if weather in ("rain", "storm"):
+        for _ in range(140 if weather == "storm" else 95):
             x, dur = rnd.uniform(-20, W + 60), rnd.uniform(.55, 1.0)
             o.append(f'<path class="rn" d="M{x:.0f} 0 l-4 14" stroke="#cfd9e6" stroke-width="{rnd.uniform(.8, 1.4):.1f}" '
                      f'opacity="{rnd.uniform(.35, .7):.2f}" style="animation-duration:{dur:.2f}s;animation-delay:-{rnd.uniform(0, dur):.2f}s"/>')
     for st in flashes:
         o.append(f'<rect class="lt" style="{st}" width="{W}" height="{H}" fill="#dfe8ff" opacity=".22"/>')
-    if weather == "nebel":
+    if weather == "fog":
         o.append(f'<rect width="{W}" height="{H}" fill="{haze}" opacity=".32"/>')
         for i, (y, h, op) in enumerate(((120, 110, .9), (185, 100, 1), (245, 100, .85))):
             o.append(f'<rect class="fg" x="-80" y="{y}" width="{W + 160}" height="{h}" fill="url(#fog)" opacity="{op}" '
                      f'style="animation-duration:{14 + i * 5}s;animation-delay:-{i * 4}s"/>')
 
     o.append(f'<text x="31" y="56" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" '
-             f'letter-spacing="3" fill="#ffffff" opacity=".55">{SEASON_DE[season].upper()} \u00b7 {weather.upper()}</text>')
+             f'letter-spacing="3" fill="#ffffff" opacity=".55">{SEASON_NAME[season].upper()} \u00b7 {weather.upper()}</text>')
     o.append('</g></svg>')
     return "\n".join(o)
 
@@ -586,8 +588,9 @@ def apply_config(cfg, now):
     ov = cfg.get("override") or {}
     until = ov.get("until")
     if ov and (not until or datetime.fromisoformat(until.replace("Z", "+00:00")) > now):
-        if ov.get("weather") in OVERCAST:
-            kw["weather"] = ov["weather"]
+        w = LEGACY_WEATHER.get(ov.get("weather"), ov.get("weather"))
+        if w in OVERCAST:
+            kw["weather"] = w
         if ov.get("season") == "december":
             kw["season"], kw["xmas"] = "winter", True
         elif ov.get("season") in SEASON:

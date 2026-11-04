@@ -2,7 +2,7 @@ name: Update banner
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # alle 30 Minuten
+    - cron: "*/30 * * * *"   # every 30 minutes
   workflow_dispatch:
   push:
     branches: [main]

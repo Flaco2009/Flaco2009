@@ -12,7 +12,7 @@ import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-WEATHER = {"klar", "wolkig", "regen", "gewitter", "nebel", "schnee"}
+WEATHER = {"clear", "cloudy", "rain", "storm", "fog", "snow"}
 SEASONS = {"spring", "summer", "autumn", "winter", "december"}
 
 
@@ -27,13 +27,13 @@ def main():
     owner = os.environ["GITHUB_REPOSITORY_OWNER"]
     if issue["user"]["login"].lower() != owner.lower():
         out("result", "rejected")
-        out("message", f"Nur @{owner} kann diesen Banner ändern. Hol dir deinen eigenen Banner und stell ihn dort ein 🌲")
+        out("message", f"Only @{owner} can change this banner. Get your own banner and set it up there 🌲")
         return
 
     m = re.search(r"```json\s*(\{.*?\})\s*```", issue.get("body") or "", re.S)
     if not m:
         out("result", "invalid")
-        out("message", "Keine Einstellungen gefunden. Bitte über die Spielwiese speichern.")
+        out("message", "No settings found. Please save from the playground.")
         return
     req = json.loads(m.group(1))
 
@@ -56,7 +56,7 @@ def main():
     ov = req.get("override")
     if ov is None:
         cfg["override"] = None
-        summary = "Banner läuft wieder automatisch."
+        summary = "Banner is back on auto."
     else:
         clean = {
             "weather": ov.get("weather") if ov.get("weather") in WEATHER else None,
@@ -71,12 +71,12 @@ def main():
             clean = None
         cfg["override"] = clean
         parts = [f"{k}: {clean[k]}" for k in ("weather", "season", "hour") if clean and clean[k] is not None]
-        summary = "Gespeichert: " + (", ".join(parts) or "auto") + (f" (bis {clean['until'].replace('T', ' ')[:16]} UTC)" if clean and clean["until"] else " (bis du zurücksetzt)")
+        summary = "Saved: " + (", ".join(parts) or "auto") + (f" (until {clean['until'].replace('T', ' ')[:16]} UTC)" if clean and clean["until"] else " (until you reset it)")
 
     json.dump(cfg, open("config.json", "w"), indent=2, ensure_ascii=False)
     open("config.json", "a").write("\n")
     out("result", "ok")
-    out("message", summary + "\n\nDein Profil-Banner ist in etwa einer Minute aktualisiert.")
+    out("message", summary + "\n\nYour profile banner updates in about a minute.")
 
 
 if __name__ == "__main__":
@@ -84,5 +84,5 @@ if __name__ == "__main__":
         main()
     except Exception as e:  # never leave the issue hanging
         out("result", "invalid")
-        out("message", f"Konnte die Einstellungen nicht lesen: {e}")
+        out("message", f"Could not read the settings: {e}")
         sys.exit(0)

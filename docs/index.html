@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lookout Banner</title>
-<meta name="description" content="Live-Banner fürs GitHub-Profil: Feuerwachturm über den Baumspitzen. Wetter, Jahreszeit und Uhrzeit einstellen und speichern.">
+<meta name="description" content="Live GitHub profile banner: a fire lookout above the treetops. Pick weather, season and time and save it to your profile.">
 <style>
 :root{--bg:#0b0f1a;--panel:#121829;--line:#243049;--line2:#3a4a6e;--text:#e6ebf5;--muted:#8a95ad;--accent:#ffc96e;--ok:#8be3a0;--bad:#ff8f8f}
 *{box-sizing:border-box}
@@ -51,29 +51,29 @@ input[type=range]{width:100%;max-width:560px;accent-color:var(--accent)}
 <h1>LOOKOUT · BANNER</h1>
 
 <div class="who">
-  <input type="text" id="user" placeholder="dein GitHub-Name" autocomplete="off" spellcheck="false">
-  <button class="chip" id="load">laden</button>
+  <input type="text" id="user" placeholder="your GitHub username" autocomplete="off" spellcheck="false">
+  <button class="chip" id="load">load</button>
 </div>
 <div class="status" id="status"></div>
 
-<div class="stage" id="stage"><div class="loading" id="loading">LADE BANNER …</div></div>
+<div class="stage" id="stage"><div class="loading" id="loading">LOADING BANNER …</div></div>
 
 <div class="bar">
   <button class="btn" data-panel="weather" aria-expanded="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="#ffc96e" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M5.3 18.7l1.5-1.5M17.2 6.8l1.5-1.5"/></svg>
-    Wetter <small id="lw">auto</small></button>
+    Weather <small id="lw">auto</small></button>
   <button class="btn" data-panel="season" aria-expanded="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="#9fd7ff" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
-    Jahreszeit <small id="ls">auto</small></button>
+    Season <small id="ls">auto</small></button>
   <button class="btn" data-panel="time" aria-expanded="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="#b6ffb0" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
-    Uhrzeit <small id="lt">auto</small></button>
+    Time <small id="lt">auto</small></button>
   <button class="btn" data-panel="place" aria-expanded="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="#f3a9c2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.5-6.1-6.5-11a6.5 6.5 0 0 1 13 0c0 4.9-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg>
-    Name &amp; Ort <small id="lp">–</small></button>
+    Name &amp; place <small id="lp">–</small></button>
   <button class="btn save" data-panel="save" aria-expanded="false">
     <svg viewBox="0 0 24 24" fill="none" stroke="#1b1408" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg>
-    Speichern</button>
+    Save</button>
 </div>
 
 <div class="panel" id="p-weather"></div>
@@ -83,44 +83,45 @@ input[type=range]{width:100%;max-width:560px;accent-color:var(--accent)}
     <output id="clock">auto</output>
     <input type="range" id="hour" min="0" max="23.75" step="0.25">
     <div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
-    <button class="chip" id="autotime">auto (echte Uhrzeit)</button>
+    <button class="chip" id="autotime">auto (real time)</button>
   </div>
 </div>
 <div class="panel" id="p-place">
-  <h3>NAME IM BANNER</h3>
-  <div class="row"><input type="text" id="name" maxlength="24" placeholder="leer = GitHub-Name"></div>
-  <h3>ORT (für Sonnenstand &amp; Uhrzeit)</h3>
-  <div class="row"><input type="text" id="city" placeholder="Stadt suchen …"><button class="chip" id="search">suchen</button></div>
+  <h3>NAME IN THE BANNER</h3>
+  <div class="row"><input type="text" id="name" maxlength="24" placeholder="empty = GitHub username"></div>
+  <h3>PLACE (for sun position &amp; time)</h3>
+  <div class="row"><input type="text" id="city" placeholder="search a city …"><button class="chip" id="search">search</button></div>
   <div class="row" id="results"></div>
 </div>
 <div class="panel" id="p-save">
   <div class="summary" id="sum"></div>
-  <h3>WIE LANGE?</h3>
+  <h3>FOR HOW LONG?</h3>
   <div class="row" id="durs"></div>
   <div class="row" style="margin-top:10px">
-    <button class="chip big on" id="dosave">Auf mein Profil speichern</button>
-    <button class="chip big ghost" id="doreset">Profil auf Auto zurücksetzen</button>
+    <button class="chip big on" id="dosave">Save to my profile</button>
+    <button class="chip big ghost" id="doreset">Reset profile to auto</button>
   </div>
-  <div class="hint">Öffnet GitHub mit fertig ausgefüllter Nachricht an dein Repo. Dort nur noch auf <b>Create</b> klicken,<br>dein Banner ändert sich nach ca. einer Minute. Nur du kannst dein eigenes Profil ändern.</div>
+  <div class="hint">Opens GitHub with a prefilled issue in your repo. Just click <b>Create</b>,<br>your banner updates in about a minute. Only you can change your own profile.</div>
 </div>
 
 <div class="foot">
-  Noch keinen Banner? <a href="https://github.com/new?template_name=Flaco2009&amp;template_owner=Flaco2009" target="_blank" rel="noopener">Hol ihn dir</a>: Repo aus der Vorlage erstellen und genau wie deinen GitHub-Namen benennen.<br>
-  Ohne Speichern läuft jeder Banner automatisch: echte Uhrzeit am eigenen Ort, Jahreszeit nach Datum, zufälliges Wetter alle 3 Stunden.
+  No banner yet? <a href="https://github.com/new?template_name=Flaco2009&amp;template_owner=Flaco2009" target="_blank" rel="noopener">Get yours</a>: create a repo from the template and name it exactly like your GitHub username.<br>
+  Without saving, every banner runs on auto: real time at your place, season by date, random weather every 3 hours.
 </div>
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
 <script>
-const WEATHER = [["auto","auto"],["klar","klar"],["wolkig","wolkig"],["regen","regen"],["gewitter","gewitter"],["nebel","nebel"],["schnee","schnee"]];
-const SEASONS = [["auto","auto"],["spring","frühling"],["summer","sommer"],["autumn","herbst"],["winter","winter"],["december","dezember"]];
-const DURS = [[1,"1 Std"],[3,"3 Std"],[6,"6 Std"],[24,"1 Tag"],[168,"1 Woche"],[0,"für immer"]];
+const WEATHER = [["auto","auto"],["clear","clear"],["cloudy","cloudy"],["rain","rain"],["storm","storm"],["fog","fog"],["snow","snow"]];
+const LEGACY = {klar:"clear", wolkig:"cloudy", regen:"rain", gewitter:"storm", nebel:"fog", schnee:"snow"};
+const SEASONS = [["auto","auto"],["spring","spring"],["summer","summer"],["autumn","autumn"],["winter","winter"],["december","december"]];
+const DURS = [[1,"1 hour"],[3,"3 hours"],[6,"6 hours"],[24,"1 day"],[168,"1 week"],[0,"forever"]];
 const DATES = {spring:[2026,3,15], summer:[2026,6,15], autumn:[2026,9,20], winter:[2027,0,20], december:[2026,11,20]};
 const $ = id => document.getElementById(id);
 const q = new URLSearchParams(location.search);
 const state = {
   user: q.get("user") || "Flaco2009",
   w: q.get("w") || "auto", s: q.get("s") || "auto", h: q.has("t") ? +q.get("t") : null,
-  name: "", city: "Zürich", lat: 47.3769, lon: 8.5417, tz: "Europe/Zurich", dur: 3,
+  name: "", city: "Zurich", lat: 47.3769, lon: 8.5417, tz: "Europe/Zurich", dur: 3,
 };
 
 function chips(el, list, key, label, after){
@@ -155,7 +156,7 @@ if (q.get("open")) openPanel(q.get("open"));
 // ---- time ----
 const fmt = h => String(Math.floor(h)).padStart(2,"0") + ":" + String(Math.round(h % 1 * 60)).padStart(2,"0");
 function localNowHour(){
-  const p = new Intl.DateTimeFormat("de-CH",{timeZone:state.tz,hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());
+  const p = new Intl.DateTimeFormat("en-GB",{timeZone:state.tz,hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());
   return (+p.find(x=>x.type==="hour").value % 24) + +p.find(x=>x.type==="minute").value/60;
 }
 function syncClock(){
@@ -186,9 +187,9 @@ function utcFor(){
 $("name").oninput = () => { state.name = $("name").value.trim(); refreshChips(); render(); };
 async function searchCity(){
   const term = $("city").value.trim(); if (!term) return;
-  $("results").innerHTML = '<span class="hint">suche …</span>';
+  $("results").innerHTML = '<span class="hint">searching …</span>';
   try {
-    const r = await (await fetch("https://geocoding-api.open-meteo.com/v1/search?count=5&language=de&name=" + encodeURIComponent(term))).json();
+    const r = await (await fetch("https://geocoding-api.open-meteo.com/v1/search?count=5&language=en&name=" + encodeURIComponent(term))).json();
     $("results").innerHTML = "";
     for (const c of (r.results || [])) {
       const b = document.createElement("button");
@@ -197,8 +198,8 @@ async function searchCity(){
         $("city").value = c.name; $("results").innerHTML = ""; refreshChips(); syncClock(); render(); };
       $("results").appendChild(b);
     }
-    if (!r.results) $("results").innerHTML = '<span class="hint">nichts gefunden</span>';
-  } catch (e) { $("results").innerHTML = '<span class="hint">Suche gerade nicht erreichbar</span>'; }
+    if (!r.results) $("results").innerHTML = '<span class="hint">nothing found</span>';
+  } catch (e) { $("results").innerHTML = '<span class="hint">search is unavailable right now</span>'; }
 }
 $("search").onclick = searchCity;
 $("city").onkeydown = e => { if (e.key === "Enter") searchCity(); };
@@ -209,7 +210,7 @@ let keepUrlChoice = q.has("w") || q.has("s") || q.has("t");
 async function loadUser(){
   const u = $("user").value.trim().replace(/^@/, "") || "Flaco2009";
   state.user = u;
-  $("status").textContent = "lade Einstellungen von " + u + " …";
+  $("status").textContent = "loading settings of " + u + " …";
   try {
     const res = await fetch(`https://raw.githubusercontent.com/${u}/${u}/main/config.json?` + Date.now());
     if (!res.ok) throw new Error("none");
@@ -217,16 +218,16 @@ async function loadUser(){
     Object.assign(state, {name: cfg.name || "", city: cfg.city || state.city, lat: cfg.lat ?? state.lat, lon: cfg.lon ?? state.lon, tz: cfg.tz || state.tz});
     const ov = cfg.override, active = ov && (!ov.until || new Date(ov.until) > new Date());
     if (!keepUrlChoice) {
-      state.w = active && ov.weather || "auto"; state.s = active && ov.season || "auto";
+      state.w = active && (LEGACY[ov.weather] || ov.weather) || "auto"; state.s = active && ov.season || "auto";
       state.h = active && ov.hour != null ? ov.hour : null;
     }
     keepUrlChoice = false;
     $("status").innerHTML = active
-      ? `Profil von ${u}: festgelegt (${[ov.weather && WL[ov.weather], ov.season && SL[ov.season], ov.hour != null && fmt(ov.hour)].filter(Boolean).join(", ")})` +
-        (ov.until ? ` bis ${new Date(ov.until).toLocaleString("de-CH",{timeZone:state.tz,weekday:"short",hour:"2-digit",minute:"2-digit"})}` : " für immer")
-      : `Profil von ${u}: läuft automatisch`;
+      ? `${u}'s profile: pinned (${[ov.weather && (WL[ov.weather] || WL[LEGACY[ov.weather]]), ov.season && SL[ov.season], ov.hour != null && fmt(ov.hour)].filter(Boolean).join(", ")})` +
+        (ov.until ? ` until ${new Date(ov.until).toLocaleString("en-GB",{timeZone:state.tz,weekday:"short",hour:"2-digit",minute:"2-digit"})}` : " forever")
+      : `${u}'s profile: running on auto`;
   } catch (e) {
-    $("status").innerHTML = `${u} hat noch keinen Lookout-Banner. <a href="https://github.com/new?template_name=Flaco2009&template_owner=Flaco2009" target="_blank" rel="noopener">Hol ihn dir</a>, die Vorschau unten zeigt schon deinen Namen.`;
+    $("status").innerHTML = `${u} has no Lookout banner yet. <a href="https://github.com/new?template_name=Flaco2009&template_owner=Flaco2009" target="_blank" rel="noopener">Get yours</a>, the preview below already shows your name.`;
     state.name = "";
   }
   $("name").value = state.name; $("city").value = state.city;
@@ -244,19 +245,19 @@ function overrideObj(){
   return o;
 }
 function describe(o){
-  if (!o) return "alles auf auto";
+  if (!o) return "everything on auto";
   return [o.weather && WL[o.weather], o.season && SL[o.season], o.hour !== null && fmt(o.hour)].filter(Boolean).join(" · ");
 }
 function updateSummary(){
   const o = overrideObj();
-  $("sum").textContent = "Auf dem Profil: " + describe(o) + (o ? (state.dur ? ` für ${DURS.find(d => d[0] === state.dur)[1]}` : " für immer") : "") +
+  $("sum").textContent = "On your profile: " + describe(o) + (o ? (state.dur ? ` for ${DURS.find(d => d[0] === state.dur)[1]}` : " forever") : "") +
     ` · ${state.name || state.user} · ${state.city}`;
 }
 function openIssue(override){
   const u = state.user;
   const payload = {name: state.name, city: state.city, lat: state.lat, lon: state.lon, tz: state.tz, override};
   const title = "banner: " + describe(override);
-  const body = "Gesendet von der Lookout-Spielwiese. Einfach auf **Create** klicken, der Rest passiert automatisch.\n\n```json\n" +
+  const body = "Sent from the Lookout playground. Just click **Create**, the rest happens automatically.\n\n```json\n" +
                JSON.stringify(payload, null, 2) + "\n```";
   window.open(`https://github.com/${u}/${u}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`, "_blank", "noopener");
 }
@@ -296,7 +297,7 @@ build(datetime.fromisoformat(_t).replace(tzinfo=timezone.utc), _s, _w, _n, _la, 
   ready = true;
   render();
   setInterval(() => { if (state.h === null) { syncClock(); render(); } }, 60000);
-})().catch(e => { $("loading").textContent = "FEHLER BEIM LADEN: " + e.message; });
+})().catch(e => { $("loading").textContent = "FAILED TO LOAD: " + e.message; });
 </script>
 </body>
 </html>

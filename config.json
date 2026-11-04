@@ -1,11 +1,11 @@
 {
   "name": "",
-  "city": "Zürich",
+  "city": "Zurich",
   "lat": 47.3769,
   "lon": 8.5417,
   "tz": "Europe/Zurich",
   "override": {
-    "weather": "nebel",
+    "weather": "fog",
     "season": "december",
     "hour": 16.25,
     "until": "2026-11-05T11:48:46Z"
