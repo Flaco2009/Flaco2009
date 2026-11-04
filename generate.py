@@ -164,7 +164,7 @@ def build(now_utc, season=None, weather=None):
     p = sky(elev)
     if ov:
         _nf = max(0.0, min(1.0, (3 - elev) / 11))
-        grey = mix("#a3abb5", "#151820", _nf)
+        grey = mix("#6c7480" if weather == "gewitter" else "#97a0ab" if weather == "regen" else "#a3abb5", "#151820", _nf)
         for k in ("top", "mid", "bot", "haze", "mtn"):
             p[k] = mix(p[k], grey, ov * (1.1 if k == "top" else .85))
         if _nf < .6:
@@ -178,6 +178,7 @@ def build(now_utc, season=None, weather=None):
 <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{p["top"]}"/><stop offset=".62" stop-color="{p["mid"]}"/><stop offset="1" stop-color="{p["bot"]}"/></linearGradient>
 <linearGradient id="fog" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{haze}" stop-opacity="0"/><stop offset=".7" stop-color="{haze}" stop-opacity=".6"/><stop offset="1" stop-color="{haze}" stop-opacity="0"/></linearGradient>
 <radialGradient id="halo"><stop offset="0" stop-color="#fff4c4" stop-opacity=".85"/><stop offset=".35" stop-color="#fff4c4" stop-opacity=".22"/><stop offset="1" stop-color="#fff4c4" stop-opacity="0"/></radialGradient>
+<radialGradient id="bolt"><stop offset="0" stop-color="#e6edff" stop-opacity=".8"/><stop offset="1" stop-color="#e6edff" stop-opacity="0"/></radialGradient>
 <radialGradient id="warm"><stop offset="0" stop-color="#ffc36a" stop-opacity=".75"/><stop offset="1" stop-color="#ffc36a" stop-opacity="0"/></radialGradient>
 <mask id="cres"><rect width="{W}" height="{H}" fill="#fff"/><circle id="mc" cx="0" cy="0" r="0" fill="#000"/></mask>
 <clipPath id="c"><rect width="{W}" height="{H}" rx="14"/></clipPath>
@@ -194,7 +195,7 @@ def build(now_utc, season=None, weather=None):
 .wg{{transform-box:fill-box;transform-origin:center;animation:wg .45s ease-in-out infinite alternate}}@keyframes wg{{from{{transform:scaleY(1)}}to{{transform:scaleY(-.5)}}}}
 .cd{{animation:cd linear infinite}}@keyframes cd{{from{{transform:translateX(-360px)}}to{{transform:translateX({W + 360}px)}}}}
 .rn{{animation:rn linear infinite}}@keyframes rn{{from{{transform:translate(0,-30px)}}to{{transform:translate(-40px,{H + 30}px)}}}}
-.lt{{animation:lt 7s linear infinite}}@keyframes lt{{0%,91%,93.5%,96%,100%{{opacity:0}}92%,95%{{opacity:1}}}}
+.lt{{opacity:0;animation:lt 7s linear infinite}}@keyframes lt{{0%,90%,91.6%,92.4%,95%,100%{{opacity:0}}90.4%{{opacity:1}}91.2%{{opacity:.3}}92.8%{{opacity:.9}}93.6%{{opacity:.2}}}}
 .fg{{animation:fg ease-in-out infinite alternate}}@keyframes fg{{from{{transform:translateX(-60px)}}to{{transform:translateX(60px)}}}}
 .gl{{animation:gl 3.5s ease-in-out infinite alternate}}@keyframes gl{{from{{opacity:.6}}to{{opacity:1}}}}
 </style>
@@ -259,6 +260,50 @@ def build(now_utc, season=None, weather=None):
         o.append(f'<path class="cd" d="{d}" fill="{cc}" fill-rule="nonzero" opacity="{.92 if ov else .75}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s"/>')
     o.append(f'<rect y="135" width="{W}" height="110" fill="url(#fog)"/>')
 
+    # low cloud deck for rain / storm
+    if weather in ("regen", "gewitter"):
+        deck = mix("#59616e" if weather == "gewitter" else "#8a939f", "#0f1218", nf)
+        for layer, (yb, amp, op) in enumerate(((88, 14, .55), (74, 12, .8))):
+            d = f"M0 0 H{W} V{yb}"
+            x = W
+            while x > 0:
+                r = random.Random(f"deck{layer}{x}").uniform(22, 48)
+                d += f" A{r:.0f} {r * .55:.0f} 0 0 1 {max(0, x - 2 * r):.0f} {yb + random.Random(x).uniform(-amp, amp):.0f}"
+                x -= 2 * r
+            o.append(f'<path d="{d} Z" fill="{deck}" opacity="{op}"/>')
+
+    # lightning: jagged bolts with branches, strike behind the treeline
+    flashes = []
+    if weather == "gewitter":
+        lr = random.Random(f"bolt-{now_utc:%Y%m%d%H}")
+
+        def walk(x, y, y_end, step, spread):
+            pts = [(x, y)]
+            while y < y_end:
+                y += lr.uniform(step * .6, step * 1.2)
+                x += lr.uniform(-spread, spread)
+                pts.append((x, min(y, y_end)))
+            return pts
+
+        for i, (bx, dur, delay) in enumerate(((lr.uniform(220, 420), 7, 0), (lr.uniform(560, 760), 11, 4.5))):
+            main = walk(bx, 95, 232, 9, 7)
+            paths = ["M" + " L".join(f"{a:.1f} {b:.1f}" for a, b in main)]
+            for _ in range(3):
+                sx, sy = main[lr.randint(2, len(main) // 2)]
+                br = walk(sx, sy, sy + lr.uniform(25, 55), 7, 6)
+                drift = lr.choice([-1, 1]) * lr.uniform(2, 4)
+                br = [(x + drift * k, y) for k, (x, y) in enumerate(br)]
+                paths.append("M" + " L".join(f"{a:.1f} {b:.1f}" for a, b in br))
+            d = " ".join(paths)
+            st = f"animation-duration:{dur}s;animation-delay:-{delay}s"
+            flashes.append(st)
+            o.append(f'<g class="lt" style="{st}" fill="none" stroke-linecap="round" stroke-linejoin="round">'
+                     f'<circle cx="{bx:.0f}" cy="100" r="150" fill="url(#bolt)"/>'
+                     f'<path d="{d}" stroke="#9fb8ff" stroke-width="7" opacity=".25"/>'
+                     f'<path d="{d}" stroke="#d8e4ff" stroke-width="3" opacity=".6"/>'
+                     f'<path d="{paths[0]}" stroke="#ffffff" stroke-width="1.6"/>'
+                     f'<path d="{" ".join(paths[1:])}" stroke="#ffffff" stroke-width=".9"/></g>')
+
     # canopy rows (far -> near). tower sits between row 2 and 3
     rows = [(206, 18, 30, .30, 9, .72, 0), (224, 26, 42, .32, 12, .54, 0), (246, 36, 58, .33, 17, .36, 20)]
     for i, r in enumerate(rows):
@@ -267,7 +312,7 @@ def build(now_utc, season=None, weather=None):
 
     # ---- fire watchtower ----
     cx = 905
-    lit = elev < 4
+    lit = elev < 4 or ov >= .6
     wood, dark, roof = T("#7a5236"), T("#4a3022"), T("#3a2a22")
     legs = (f'<path d="M{cx-31} 152 L{cx-52} 330 M{cx+31} 152 L{cx+52} 330" stroke="{dark}" stroke-width="4.5"/>'
             f'<path d="M{cx-14} 152 L{cx-22} 330 M{cx+14} 152 L{cx+22} 330" stroke="{mix(dark, haze, .25)}" stroke-width="3"/>')
@@ -342,10 +387,8 @@ def build(now_utc, season=None, weather=None):
             x, dur = rnd.uniform(-20, W + 60), rnd.uniform(.55, 1.0)
             o.append(f'<path class="rn" d="M{x:.0f} 0 l-4 14" stroke="#cfd9e6" stroke-width="{rnd.uniform(.8, 1.4):.1f}" '
                      f'opacity="{rnd.uniform(.35, .7):.2f}" style="animation-duration:{dur:.2f}s;animation-delay:-{rnd.uniform(0, dur):.2f}s"/>')
-    if weather == "gewitter":
-        bx = 330
-        o.append(f'<g class="lt"><rect width="{W}" height="{H}" fill="#e8eeff" opacity=".28"/>'
-                 f'<path d="M{bx} 40 L{bx - 14} 92 L{bx - 2} 92 L{bx - 18} 150 L{bx + 10} 84 L{bx - 2} 84 L{bx + 12} 40Z" fill="#fffbe6"/></g>')
+    for st in flashes:
+        o.append(f'<rect class="lt" style="{st}" width="{W}" height="{H}" fill="#dfe8ff" opacity=".22"/>')
     if weather == "nebel":
         o.append(f'<rect width="{W}" height="{H}" fill="{haze}" opacity=".32"/>')
         for i, (y, h, op) in enumerate(((120, 110, .9), (185, 100, 1), (245, 100, .85))):
