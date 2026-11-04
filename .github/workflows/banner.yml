@@ -22,15 +22,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Personalize README in copies of the template
-        if: github.repository_owner != 'Flaco2009'
-        run: |
-          if grep -q "Flaco2009/Flaco2009\|user=Flaco2009" README.md; then
-            sed -i "s#Flaco2009/Flaco2009#${{ github.repository }}#g; s#user=Flaco2009#user=${{ github.repository_owner }}#g" README.md
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -qam "Personalize banner README" && git push
-          fi
       - run: mkdir out && python generate.py out/banner.svg
       - name: Push to output branch
         run: |
