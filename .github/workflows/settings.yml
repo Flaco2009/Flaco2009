@@ -21,6 +21,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Get the latest Lookout and its dependencies
+        run: |
+          bash .github/scripts/update_lookout.sh
+          pip install -q numpy pillow
       - id: apply
         run: python .github/scripts/apply_issue.py
       - name: Commit config

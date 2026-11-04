@@ -6,6 +6,17 @@ import math
 import os
 import random
 import sys
+
+try:  # realistic raster layers (numpy + Pillow); flat vector art otherwise
+    import numpy as np
+    import terrain as TR
+except Exception:  # pragma: no cover
+    np = TR = None
+try:
+    _HERE = os.path.dirname(os.path.abspath(__file__))
+except NameError:  # running inside the browser playground
+    _HERE = "."
+TERRAIN_DIR = os.environ.get("LOOKOUT_TERRAIN", os.path.join(_HERE, "assets", "terrain"))
 from datetime import datetime, timezone
 
 LAT, LON = 47.3769, 8.5417  # Zurich
@@ -186,8 +197,89 @@ def canopy(rnd, base, hmin, hmax, wf, spacing, k, S, haze, T, bloom_n=0, light=-
     return out
 
 
+# ---------- realistic raster layers ----------
+FIRS = {
+    "spring": ["#2a5236", "#30603d", "#264a31"],
+    "summer": ["#1f4a33", "#24563a", "#1b4130"],
+    "autumn": ["#24442f", "#2b4b34", "#203b2b"],
+    "winter": ["#1f3a33", "#25423a", "#1b332d"],
+}
+
+
+def _lerp3(a, b, t):
+    return a + (b - a) * max(0.0, min(1.0, t))
+
+
+def raster_scene(p, haze_hex, elev, nf, ov, season, weather, wind, sun_x, now_utc):
+    rgb = TR.hexrgb
+    if elev <= -9:
+        light = rgb("#6f82b8") * .2
+    elif elev < 0:
+        light = _lerp3(rgb("#6f82b8") * .2, rgb("#ff9e6a") * .85, (elev + 9) / 9)
+    elif elev < 12:
+        light = _lerp3(rgb("#ff9e6a") * .85, rgb("#fff2df") * 1.15, elev / 12)
+    else:
+        light = rgb("#fff2df") * 1.15
+    light = light * (1 - ov * (.86 if weather == "storm" else .78))
+    amb = rgb(p["mid"]) * .55 + rgb(p["top"]) * .22 + rgb(p["bot"]) * .12
+    haze = rgb(haze_hex)
+    fog_k = {"clear": 1 / 21000, "cloudy": 1 / 16000, "rain": 1 / 9000, "storm": 1 / 8500, "snow": 1 / 7500, "fog": 1 / 4200}[weather]
+    morning = 1.0 if -3 < elev < 9 else 0.0
+    valley = {"fog": .9, "rain": .45, "storm": .4, "snow": .35}.get(weather, .12 + .35 * morning)
+    snow_boost = {"snow": 700}.get(weather, 0)
+
+    G = TR.gbuffer(TERRAIN_DIR)
+    terr = TR.shade_terrain(G, season, dict(elev=elev, x=sun_x), light, haze, amb, fog_k, snow_boost, valley)
+    out = {"defs": "", "spawn": []}
+    out["terrain"] = f'<image x="0" y="0" width="{W}" height="{H}" preserveAspectRatio="none" href="{TR.to_webp_uri(terr, 82)}"/>'
+
+    # clouds: tileable bands drifting with the wind
+    cov = {"clear": .16, "cloudy": .5, "rain": .84, "storm": .9, "fog": .55, "snow": .62}[weather]
+    lit = np.clip(_lerp3(rgb("#ffffff") * (.3 + .7 * min(1.2, float(light.mean()) * 1.1)) + amb * .25, rgb(p["bot"]), .25), 0, 1)
+    dark = np.clip(_lerp3(rgb("#5c6470"), rgb(p["mid"]), .55) * (1 - .35 * ov), 0, 1)
+    if weather == "storm":
+        lit, dark = lit * .62, dark * .55
+    layers = [("ca", 190, cov * .85, 1.0 if cov > .3 else .7, 420 / (1 + wind), 3)]
+    if cov > .45:
+        layers.append(("cb", 150, min(.95, cov + .05), 1.0, 170 / (1 + wind), 9))
+    cl, low = "", ""
+    for cid, ch, c, al, dur, seed in layers:
+        arr = TR.cloud_layer(W, ch, c, sun_x, lit, dark * (.85 if cid == "cb" else 1), al, seed=seed)
+        out["defs"] += f'<image id="{cid}" width="{W}" height="{ch}" preserveAspectRatio="none" href="{TR.to_webp_uri(arr, 72)}"/>'
+        tile = f'<g class="ck" style="animation-duration:{dur:.0f}s"><use href="#{cid}"/><use href="#{cid}" x="{W}"/></g>'
+        if cid == "cb":  # low cloud deck hangs in front of the peaks
+            low += f'<g transform="translate(0 {12 if weather == "storm" else 22})">{tile}</g>'
+        else:
+            cl += tile
+    # moving fog wisps over the valley
+    famt = {"fog": 1.0, "rain": .55, "storm": .45, "snow": .45}.get(weather, .2 + .45 * morning)
+    farr = TR.fog_layer(W, 120, famt, np.clip(haze * 1.04, 0, 1))
+    out["defs"] += f'<image id="fw" width="{W}" height="120" preserveAspectRatio="none" href="{TR.to_webp_uri(farr, 70)}"/>'
+    fog = f'<g class="ck" style="animation-duration:{260 / (1 + wind):.0f}s"><use href="#fw" y="150"/><use href="#fw" x="{W}" y="150"/></g>'
+    out["clouds"] = cl
+    out["low"] = low
+    # grain + vignette
+    out["defs"] += ('<filter id="gr" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency=".85" '
+                    'numOctaves="2" seed="4" stitchTiles="stitch"/><feColorMatrix values="0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1.6 -.5"/></filter>'
+                    '<radialGradient id="vg" cx="50%" cy="45%" r="75%"><stop offset=".55" stop-color="#000" stop-opacity="0"/>'
+                    '<stop offset="1" stop-color="#000" stop-opacity=".38"/></radialGradient>')
+
+    # firs: a hazy band behind the tower and a crisp band in front of it
+    rng = np.random.default_rng(2009)
+    cols = FIRS[season]
+    snow = season == "winter" or weather == "snow"
+    autumn = season == "autumn"
+    mid = TR.fir_band(W, H, 312, 30, 80, 170, cols, light * .9 + amb * .3, sun_x, haze, .22, snow, autumn, rng, scale=.7)
+    spawn = []
+    front = TR.fir_band(W, H, 342, 85, 180, 46, cols, light * .9 + amb * .3, sun_x, haze, .06, snow, autumn, rng, spawn=spawn)
+    out["mid"] = fog + f'<image width="{W}" height="{H}" href="{TR.to_webp_uri(mid, 80)}"/>'
+    out["front"] = f'<image width="{W}" height="{H}" href="{TR.to_webp_uri(front, 82)}"/>'
+    out["spawn"] = [(x, y) for x, y in spawn if 0 < x < W and y > 150]
+    return out
+
+
 # ---------- scene ----------
-def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=None, xmas=None):
+def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=None, xmas=None, realistic=None):
     elev, ha = sun_position(now_utc, lat, lon)
     xmas = now_utc.month == 12 if xmas is None else xmas
     name = "".join(c for c in str(name).upper() if c.isalnum() or c in " -_.")[:24] or "LOOKOUT"
@@ -208,6 +300,7 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
     nf = max(0.0, min(1.0, (3 - elev) / 11))           # 0 day .. 1 dark
     T = lambda c, k=1.0: mix(c, p["tint"], p["k"] * k)  # scene lighting
     rnd = random.Random(2009)
+    R = (TR is not None and os.path.exists(os.path.join(TERRAIN_DIR, "depth.png"))) if realistic is None else realistic
     o = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">']
     o.append(f'''<defs>
 <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{p["top"]}"/><stop offset=".62" stop-color="{p["mid"]}"/><stop offset="1" stop-color="{p["bot"]}"/></linearGradient>
@@ -230,6 +323,7 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
 .bd{{animation:bd linear infinite}}@keyframes bd{{from{{transform:translateX(-120px)}}to{{transform:translateX({W + 120}px)}}}}
 .wg{{transform-box:fill-box;transform-origin:center;animation:wg .45s ease-in-out infinite alternate}}@keyframes wg{{from{{transform:scaleY(1)}}to{{transform:scaleY(-.5)}}}}
 .dk{{animation:dk linear infinite}}@keyframes dk{{from{{transform:translateX(0)}}to{{transform:translateX(-{W}px)}}}}
+.ck{{animation:ck linear infinite}}@keyframes ck{{from{{transform:translateX(0)}}to{{transform:translateX(-{W}px)}}}}
 .cd{{animation:cd linear infinite}}@keyframes cd{{from{{transform:translateX(-360px)}}to{{transform:translateX({W + 360}px)}}}}
 .rn{{animation:rn linear infinite}}@keyframes rn{{from{{transform:translate(0,-30px)}}to{{transform:translate(-40px,{H + 30}px)}}}}
 .lt{{opacity:0;animation:lt 7s linear infinite}}@keyframes lt{{0%,90%,91.6%,92.4%,95%,100%{{opacity:0}}90.4%{{opacity:1}}91.2%{{opacity:.3}}92.8%{{opacity:.9}}93.6%{{opacity:.2}}}}
@@ -259,7 +353,7 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
     # sun / moon
     hx = W / 2 + max(-1, min(1, ha / 100)) * W * 0.45
     if elev > -4:
-        sy = max(48, 200 - max(-4, elev) / 40 * 165)
+        sy = max(34, 150 - max(-4, elev) * (4.6 if R else 165 / 40)) if R else max(48, 200 - max(-4, elev) / 40 * 165)
         o.append(f'<g opacity="{max(.05, 1 - ov * 1.2):.2f}"><circle cx="{hx:.0f}" cy="{sy:.0f}" r="115" fill="url(#halo)"/><circle cx="{hx:.0f}" cy="{sy:.0f}" r="20" fill="#fff6d6"/></g>')
     else:
         mx, my = max(230, W - hx), 60
@@ -275,108 +369,118 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
                      f'<path d="M{x:.0f} {y:.0f} l75 -30" stroke="url(#met)" stroke-width="1.6" stroke-linecap="round"/>'
                      f'<circle cx="{x:.0f}" cy="{y:.0f}" r="1.6" fill="#fff"/><circle cx="{x:.0f}" cy="{y:.0f}" r="5" fill="#fff" opacity=".25"/></g>')
 
-    # mountains, snow cap depth depends on season
-    peaks = [(0, 196), (80, 168), (150, 186), (240, 126), (310, 166), (372, 150), (444, 182), (534, 116),
-             (622, 170), (700, 140), (772, 178), (860, 104), (948, 164), (1018, 134), (1096, 172), (1164, 146), (1200, 160)]
-    md = f"M0 {H}"
-    for i, (x, y) in enumerate(peaks):
-        if i:
-            px, py = peaks[i - 1]
-            for f in (.33, .66):
-                md += f" L{px + (x - px) * f:.0f} {py + (y - py) * f + rnd.uniform(-4, 4):.0f}"
-        md += f" L{x} {y}"
-    o.append(f'<path d="{md} L{W} {H}Z" fill="{mix(p["mtn"], haze, .2)}"/>')
-    caps = ""
-    for i in range(1, len(peaks) - 1):
-        x, y = peaks[i]
-        d = S["cap"] * (1.0 if y < 140 else 0.6 if y < 170 else 0.25)
-        if d < 8:
-            continue
-        (lx, ly), (rx, ry) = peaks[i - 1], peaks[i + 1]
-        a = (x - (x - lx) * min(.95, d / max(1, ly - y)), y + d)
-        b = (x + (rx - x) * min(.95, d / max(1, ry - y)), y + d)
-        jag = [(a[0] + (b[0] - a[0]) * f, y + d - (d * .3 if j % 2 else 0) + rnd.uniform(-2, 2))
-               for j, f in enumerate((.18, .36, .54, .72, .88))]
-        caps += poly([(x, y), a] + jag + [b])
-    if caps:
-        o.append(f'<path d="{caps}" fill="{p["msnow"]}" opacity=".92"/>')
-    # puffy clouds: shadowed base + lit top, drifting at different speeds
-    wr = random.Random(f"{weather}-{now_utc:%Y%m%d}")
-    n_cl = {"clear": 0 if nf > .5 else 3, "cloudy": 7, "rain": 2, "storm": 0, "fog": 4, "snow": 0}[weather]
-
-    def puff(rr, w):
-        """Cumulus: bell-shaped stack of lumps on a soft rounded base, no flat edges."""
-        n = rr.randint(7, 11)
-        parts, out = [], ""
-        for j in range(n):
-            t = j / (n - 1)
-            bell = math.sin(math.pi * t) ** 0.8
-            r = w * (0.07 + 0.13 * bell) * rr.uniform(0.8, 1.2)
-            cx = -w / 2 + w * t + rr.uniform(-w * .03, w * .03)
-            cy = -r * rr.uniform(0.35, 0.6) - bell * w * 0.06
-            parts.append((cx, cy, r))
-        for j in range(rr.randint(2, 4)):  # second tier of lumps on top
-            cx = rr.uniform(-w * .22, w * .22)
-            r = w * rr.uniform(.1, .16)
-            parts.append((cx, -w * rr.uniform(.13, .2), r))
-        for cx, cy, r in parts:
-            out += f"M{cx - r:.1f} {cy:.1f}a{r:.1f} {r:.1f} 0 1 0 {2 * r:.1f} 0a{r:.1f} {r:.1f} 0 1 0 {-2 * r:.1f} 0"
-        rx, ry = w * .5, w * .06
-        out += f"M{-rx:.1f} 0a{rx:.1f} {ry:.1f} 0 1 0 {2 * rx:.1f} 0a{rx:.1f} {ry:.1f} 0 1 0 {-2 * rx:.1f} 0"
-        return out
-
-    for i in range(n_cl):
-        y, w = wr.uniform(55, 125), wr.uniform(110, 260)
-        cr = random.Random(f"cloud{i}{weather}")
-        shape = puff(cr, w)
-        lightc = T(mix(mix("#ffffff", "#8a939f", ov * .8), p["mid"], .2 + .55 * nf))
-        darkc = T(mix(mix("#c3cedb", "#3f4651", ov), p["mid"], .25 + .5 * nf))
-        dur = wr.uniform(160, 300) * (260 / w) ** .3
-        o.append(f'<g class="cd" opacity="{.95 if ov else .85}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s">'
-                 f'<g transform="translate(0 {y:.0f})"><path d="{shape}" fill="{darkc}"/>'
-                 f'<path d="{shape}" fill="{lightc}" transform="translate({-w * .02:.1f} {-w * .035:.1f}) scale(.94 .9)"/></g></g>')
-    o.append(f'<rect y="135" width="{W}" height="110" fill="url(#fog)"/>')
-
-    # storm / rain cloud deck: three seamless layers rolling at different speeds
-    if weather in ("rain", "storm", "snow"):
-        storm = weather == "storm"
-
-        def deck_path(seed, yb, amp, rmin, rmax):
-            rr = random.Random(seed)
-            radii = []
-            while sum(2 * r for r in radii) < W:
-                radii.append(rr.uniform(rmin, rmax))
-            k = W / sum(2 * r for r in radii)
-            radii = [r * k for r in radii]
-            ys = [yb + rr.uniform(-amp, amp) for _ in radii]
-            n = len(radii)
-            d, x = f"M0 -5 H{2 * W} V{ys[-1]:.1f}", 2 * W
-            for _ in range(2):
-                for i in range(n - 1, -1, -1):
-                    r = radii[i]
-                    x -= 2 * r
-                    d += f" A{r:.1f} {r * .62:.1f} 0 0 1 {x:.1f} {ys[i - 1]:.1f}"
-            return d + " V-5Z"
-
-        top_c = mix("#7d8693" if storm else "#c9d0d8" if weather == "snow" else "#b3bcc7", "#141821", nf)
-        bot_c = mix("#2f3540" if storm else "#a2abb6" if weather == "snow" else "#7b8592", "#07090d", nf)
-        layers = [(98, 10, 24, 42, 170, .55), (84, 13, 30, 56, 115, .8), (66, 11, 38, 66, 75, 1)]
-        for li, (yb, amp, r1, r2, dur, op) in enumerate(layers):
-            o[1] = o[1].replace("</defs>", f'<linearGradient id="dk{li}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="{yb + amp}">'
-                                f'<stop offset="0" stop-color="{mix(top_c, bot_c, li * .2)}"/><stop offset="1" stop-color="{mix(bot_c, top_c, .15 * (2 - li))}"/></linearGradient></defs>', 1)
-            dur = dur / (1.5 if storm else 1)
-            o.append(f'<g class="dk" style="animation-duration:{dur:.0f}s"><path d="{deck_path(f"deck{li}", yb, amp, r1, r2)}" fill="url(#dk{li})" opacity="{op}"/></g>')
-        # ragged scud racing under the deck
-        for j in range(9 if storm else 6):
-            yy, rx = wr.uniform(92, 128), wr.uniform(40, 95)
-            dur = wr.uniform(35, 60) / (1.4 if storm else 1)
-            o.append(f'<ellipse class="cd" cx="0" cy="{yy:.0f}" rx="{rx:.0f}" ry="{rx * wr.uniform(.08, .14):.0f}" fill="{bot_c}" '
-                     f'opacity="{wr.uniform(.2, .35):.2f}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s"/>')
-        # lightning glowing inside the clouds
-        if storm:
+    if R:
+        hx_light = (hx - W / 2) / (W / 2) if elev > -4 else (max(230, W - hx) - W / 2) / (W / 2)
+        RL = raster_scene(p, haze, elev, nf, ov, season, weather, wind, max(-1.0, min(1.0, hx_light)), now_utc)
+        o[1] = o[1].replace("</defs>", RL["defs"] + "</defs>", 1)
+        o.append(RL["clouds"])
+        if weather == "storm":
             for j, (gx, dur, delay) in enumerate(((180, 5.5, 1), (620, 8.5, 3.2), (1010, 13, 6), (430, 9.5, 7.5))):
                 o.append(f'<ellipse class="lt" cx="{gx}" cy="58" rx="150" ry="48" fill="url(#bolt)" '
                          f'style="animation-duration:{dur}s;animation-delay:-{delay}s"/>')
+    else:
+        # mountains, snow cap depth depends on season
+        peaks = [(0, 196), (80, 168), (150, 186), (240, 126), (310, 166), (372, 150), (444, 182), (534, 116),
+                 (622, 170), (700, 140), (772, 178), (860, 104), (948, 164), (1018, 134), (1096, 172), (1164, 146), (1200, 160)]
+        md = f"M0 {H}"
+        for i, (x, y) in enumerate(peaks):
+            if i:
+                px, py = peaks[i - 1]
+                for f in (.33, .66):
+                    md += f" L{px + (x - px) * f:.0f} {py + (y - py) * f + rnd.uniform(-4, 4):.0f}"
+            md += f" L{x} {y}"
+        o.append(f'<path d="{md} L{W} {H}Z" fill="{mix(p["mtn"], haze, .2)}"/>')
+        caps = ""
+        for i in range(1, len(peaks) - 1):
+            x, y = peaks[i]
+            d = S["cap"] * (1.0 if y < 140 else 0.6 if y < 170 else 0.25)
+            if d < 8:
+                continue
+            (lx, ly), (rx, ry) = peaks[i - 1], peaks[i + 1]
+            a = (x - (x - lx) * min(.95, d / max(1, ly - y)), y + d)
+            b = (x + (rx - x) * min(.95, d / max(1, ry - y)), y + d)
+            jag = [(a[0] + (b[0] - a[0]) * f, y + d - (d * .3 if j % 2 else 0) + rnd.uniform(-2, 2))
+                   for j, f in enumerate((.18, .36, .54, .72, .88))]
+            caps += poly([(x, y), a] + jag + [b])
+        if caps:
+            o.append(f'<path d="{caps}" fill="{p["msnow"]}" opacity=".92"/>')
+        # puffy clouds: shadowed base + lit top, drifting at different speeds
+        wr = random.Random(f"{weather}-{now_utc:%Y%m%d}")
+        n_cl = {"clear": 0 if nf > .5 else 3, "cloudy": 7, "rain": 2, "storm": 0, "fog": 4, "snow": 0}[weather]
+
+        def puff(rr, w):
+            """Cumulus: bell-shaped stack of lumps on a soft rounded base, no flat edges."""
+            n = rr.randint(7, 11)
+            parts, out = [], ""
+            for j in range(n):
+                t = j / (n - 1)
+                bell = math.sin(math.pi * t) ** 0.8
+                r = w * (0.07 + 0.13 * bell) * rr.uniform(0.8, 1.2)
+                cx = -w / 2 + w * t + rr.uniform(-w * .03, w * .03)
+                cy = -r * rr.uniform(0.35, 0.6) - bell * w * 0.06
+                parts.append((cx, cy, r))
+            for j in range(rr.randint(2, 4)):  # second tier of lumps on top
+                cx = rr.uniform(-w * .22, w * .22)
+                r = w * rr.uniform(.1, .16)
+                parts.append((cx, -w * rr.uniform(.13, .2), r))
+            for cx, cy, r in parts:
+                out += f"M{cx - r:.1f} {cy:.1f}a{r:.1f} {r:.1f} 0 1 0 {2 * r:.1f} 0a{r:.1f} {r:.1f} 0 1 0 {-2 * r:.1f} 0"
+            rx, ry = w * .5, w * .06
+            out += f"M{-rx:.1f} 0a{rx:.1f} {ry:.1f} 0 1 0 {2 * rx:.1f} 0a{rx:.1f} {ry:.1f} 0 1 0 {-2 * rx:.1f} 0"
+            return out
+
+        for i in range(n_cl):
+            y, w = wr.uniform(55, 125), wr.uniform(110, 260)
+            cr = random.Random(f"cloud{i}{weather}")
+            shape = puff(cr, w)
+            lightc = T(mix(mix("#ffffff", "#8a939f", ov * .8), p["mid"], .2 + .55 * nf))
+            darkc = T(mix(mix("#c3cedb", "#3f4651", ov), p["mid"], .25 + .5 * nf))
+            dur = wr.uniform(160, 300) * (260 / w) ** .3
+            o.append(f'<g class="cd" opacity="{.95 if ov else .85}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s">'
+                     f'<g transform="translate(0 {y:.0f})"><path d="{shape}" fill="{darkc}"/>'
+                     f'<path d="{shape}" fill="{lightc}" transform="translate({-w * .02:.1f} {-w * .035:.1f}) scale(.94 .9)"/></g></g>')
+        o.append(f'<rect y="135" width="{W}" height="110" fill="url(#fog)"/>')
+
+        # storm / rain cloud deck: three seamless layers rolling at different speeds
+        if weather in ("rain", "storm", "snow"):
+            storm = weather == "storm"
+
+            def deck_path(seed, yb, amp, rmin, rmax):
+                rr = random.Random(seed)
+                radii = []
+                while sum(2 * r for r in radii) < W:
+                    radii.append(rr.uniform(rmin, rmax))
+                k = W / sum(2 * r for r in radii)
+                radii = [r * k for r in radii]
+                ys = [yb + rr.uniform(-amp, amp) for _ in radii]
+                n = len(radii)
+                d, x = f"M0 -5 H{2 * W} V{ys[-1]:.1f}", 2 * W
+                for _ in range(2):
+                    for i in range(n - 1, -1, -1):
+                        r = radii[i]
+                        x -= 2 * r
+                        d += f" A{r:.1f} {r * .62:.1f} 0 0 1 {x:.1f} {ys[i - 1]:.1f}"
+                return d + " V-5Z"
+
+            top_c = mix("#7d8693" if storm else "#c9d0d8" if weather == "snow" else "#b3bcc7", "#141821", nf)
+            bot_c = mix("#2f3540" if storm else "#a2abb6" if weather == "snow" else "#7b8592", "#07090d", nf)
+            layers = [(98, 10, 24, 42, 170, .55), (84, 13, 30, 56, 115, .8), (66, 11, 38, 66, 75, 1)]
+            for li, (yb, amp, r1, r2, dur, op) in enumerate(layers):
+                o[1] = o[1].replace("</defs>", f'<linearGradient id="dk{li}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="{yb + amp}">'
+                                    f'<stop offset="0" stop-color="{mix(top_c, bot_c, li * .2)}"/><stop offset="1" stop-color="{mix(bot_c, top_c, .15 * (2 - li))}"/></linearGradient></defs>', 1)
+                dur = dur / (1.5 if storm else 1)
+                o.append(f'<g class="dk" style="animation-duration:{dur:.0f}s"><path d="{deck_path(f"deck{li}", yb, amp, r1, r2)}" fill="url(#dk{li})" opacity="{op}"/></g>')
+            # ragged scud racing under the deck
+            for j in range(9 if storm else 6):
+                yy, rx = wr.uniform(92, 128), wr.uniform(40, 95)
+                dur = wr.uniform(35, 60) / (1.4 if storm else 1)
+                o.append(f'<ellipse class="cd" cx="0" cy="{yy:.0f}" rx="{rx:.0f}" ry="{rx * wr.uniform(.08, .14):.0f}" fill="{bot_c}" '
+                         f'opacity="{wr.uniform(.2, .35):.2f}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s"/>')
+            # lightning glowing inside the clouds
+            if storm:
+                for j, (gx, dur, delay) in enumerate(((180, 5.5, 1), (620, 8.5, 3.2), (1010, 13, 6), (430, 9.5, 7.5))):
+                    o.append(f'<ellipse class="lt" cx="{gx}" cy="58" rx="150" ry="48" fill="url(#bolt)" '
+                             f'style="animation-duration:{dur}s;animation-delay:-{delay}s"/>')
 
     # lightning: jagged bolts with branches, strike behind the treeline
     flashes = []
@@ -414,10 +518,15 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
     light = -1 if hx < W / 2 else 1
     lk = .2 * (1 - nf * .85)
     spawn = []
-    rows = [(206, 18, 32, .24, 7, .72, 0), (224, 26, 46, .24, 9.5, .54, 0), (246, 36, 62, .23, 13, .36, 20)]
-    for i, r in enumerate(rows):
-        o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6], light=light, lk=lk))
-        o.append(f'<rect y="{r[0] - 30}" width="{W}" height="50" fill="url(#fog)" opacity="{.75 if season == "autumn" else .5}"/>')
+    if R:
+        o.append(RL["terrain"])
+        o.append(RL["low"])
+        o.append(RL["mid"])
+    else:
+        rows = [(206, 18, 32, .24, 7, .72, 0), (224, 26, 46, .24, 9.5, .54, 0), (246, 36, 62, .23, 13, .36, 20)]
+        for i, r in enumerate(rows):
+            o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6], light=light, lk=lk))
+            o.append(f'<rect y="{r[0] - 30}" width="{W}" height="50" fill="url(#fog)" opacity="{.75 if season == "autumn" else .5}"/>')
 
     # ---- fire lookout: steel lattice tower, glass cab, flat roof ----
     cx = 905
@@ -505,8 +614,12 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
         o.append("<g>" + "".join(xl) + "</g>")
 
     # near rows hide the bottom of the tower
-    for r in [(274, 52, 88, .22, 18, .16, 26), (306, 74, 124, .22, 25, 0, 30)]:
-        o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6], light=light, lk=lk, sway=True, spawn=spawn))
+    if R:
+        o.append(RL["front"])
+        spawn = RL["spawn"]
+    else:
+        for r in [(274, 52, 88, .22, 18, .16, 26), (306, 74, 124, .22, 25, 0, 30)]:
+            o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6], light=light, lk=lk, sway=True, spawn=spawn))
 
     # birds (daylight, not deep winter)
     if nf < .55 and ov < .6:
@@ -560,12 +673,17 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
                      f'opacity="{rnd.uniform(.35, .7):.2f}" style="animation-duration:{dur:.2f}s;animation-delay:-{rnd.uniform(0, dur):.2f}s"/>')
     for st in flashes:
         o.append(f'<rect class="lt" style="{st}" width="{W}" height="{H}" fill="#dfe8ff" opacity=".22"/>')
-    if weather == "fog":
+    if weather == "fog" and R:
+        o.append(f'<rect width="{W}" height="{H}" fill="{haze}" opacity=".18"/>')
+    elif weather == "fog":
         o.append(f'<rect width="{W}" height="{H}" fill="{haze}" opacity=".32"/>')
-        for i, (y, h, op) in enumerate(((120, 110, .9), (185, 100, 1), (245, 100, .85))):
+        for i, (y, h, op) in enumerate(() if R else ((120, 110, .9), (185, 100, 1), (245, 100, .85))):
             o.append(f'<rect class="fg" x="-80" y="{y}" width="{W + 160}" height="{h}" fill="url(#fog)" opacity="{op}" '
                      f'style="animation-duration:{14 + i * 5}s;animation-delay:-{i * 4}s"/>')
 
+    if R:
+        o.append(f'<rect width="{W}" height="{H}" fill="url(#vg)"/>'
+                 f'<rect width="{W}" height="{H}" filter="url(#gr)" opacity=".07" style="mix-blend-mode:overlay"/>')
     o.append(f'<text x="31" y="56" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" '
              f'letter-spacing="3" fill="#ffffff" opacity=".55">{SEASON_NAME[season].upper()} \u00b7 {weather.upper()}</text>')
     o.append('</g></svg>')
