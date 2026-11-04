@@ -672,7 +672,7 @@ def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=No
             o.append(f'<path class="rn" d="M{x:.0f} 0 l-4 14" stroke="#cfd9e6" stroke-width="{rnd.uniform(.8, 1.4):.1f}" '
                      f'opacity="{rnd.uniform(.35, .7):.2f}" style="animation-duration:{dur:.2f}s;animation-delay:-{rnd.uniform(0, dur):.2f}s"/>')
     for st in flashes:
-        o.append(f'<rect class="lt" style="{st}" width="{W}" height="{H}" fill="#dfe8ff" opacity=".22"/>')
+        o.append(f'<g class="lt" style="{st}"><rect width="{W}" height="{H}" fill="#dfe8ff" opacity=".2"/></g>')
     if weather == "fog" and R:
         o.append(f'<rect width="{W}" height="{H}" fill="{haze}" opacity=".18"/>')
     elif weather == "fog":
