@@ -31,6 +31,23 @@ def season_of(dt):
             6: "summer", 7: "summer", 8: "summer"}.get(dt.month, "autumn")
 
 
+# random weather, changes every 3 hours, weighted by season
+WEATHER_ODDS = {
+    "spring": {"klar": 35, "wolkig": 30, "regen": 25, "gewitter": 10},
+    "summer": {"klar": 45, "wolkig": 25, "regen": 10, "gewitter": 20},
+    "autumn": {"klar": 25, "wolkig": 30, "regen": 20, "nebel": 25},
+    "winter": {"klar": 30, "wolkig": 20, "schnee": 35, "nebel": 15},
+}
+OVERCAST = {"klar": 0, "wolkig": .4, "regen": .62, "gewitter": .8, "nebel": .5, "schnee": .5}
+SEASON_DE = {"spring": "fr\u00fchling", "summer": "sommer", "autumn": "herbst", "winter": "winter"}
+
+
+def weather_of(dt, season):
+    r = random.Random(f"{dt:%Y-%m-%d}-{dt.hour // 3}")
+    odds = WEATHER_ODDS[season]
+    return r.choices(list(odds), weights=list(odds.values()))[0]
+
+
 # ---------- color ----------
 def rgb(c):
     return [int(c[i:i + 2], 16) for i in (1, 3, 5)]
@@ -138,11 +155,20 @@ def canopy(rnd, base, hmin, hmax, wf, spacing, k, S, haze, T, bloom_n=0):
 
 
 # ---------- scene ----------
-def build(now_utc, season=None):
+def build(now_utc, season=None, weather=None):
     elev, ha = sun_position(now_utc)
     season = season or season_of(now_utc)
+    weather = weather or weather_of(now_utc, season)
+    ov = OVERCAST[weather]
     S = SEASON[season]
     p = sky(elev)
+    if ov:
+        _nf = max(0.0, min(1.0, (3 - elev) / 11))
+        grey = mix("#a3abb5", "#151820", _nf)
+        for k in ("top", "mid", "bot", "haze", "mtn"):
+            p[k] = mix(p[k], grey, ov * (1.1 if k == "top" else .85))
+        if _nf < .6:
+            p["tint"], p["k"] = mix(p["tint"], "#3b4352", ov), max(p["k"], ov * .32)
     haze = mix(p["haze"], S["haze_shift"], 0.25 * (1 - min(1, max(0, (2 - elev) / 10))))
     nf = max(0.0, min(1.0, (3 - elev) / 11))           # 0 day .. 1 dark
     T = lambda c, k=1.0: mix(c, p["tint"], p["k"] * k)  # scene lighting
@@ -166,6 +192,10 @@ def build(now_utc, season=None):
 .fl{{transform-box:fill-box;transform-origin:left center;animation:fl 1.6s ease-in-out infinite alternate}}@keyframes fl{{from{{transform:skewY(-6deg) scaleX(.92)}}to{{transform:skewY(5deg) scaleX(1)}}}}
 .bd{{animation:bd linear infinite}}@keyframes bd{{from{{transform:translateX(-120px)}}to{{transform:translateX({W + 120}px)}}}}
 .wg{{transform-box:fill-box;transform-origin:center;animation:wg .45s ease-in-out infinite alternate}}@keyframes wg{{from{{transform:scaleY(1)}}to{{transform:scaleY(-.5)}}}}
+.cd{{animation:cd linear infinite}}@keyframes cd{{from{{transform:translateX(-360px)}}to{{transform:translateX({W + 360}px)}}}}
+.rn{{animation:rn linear infinite}}@keyframes rn{{from{{transform:translate(0,-30px)}}to{{transform:translate(-40px,{H + 30}px)}}}}
+.lt{{animation:lt 7s linear infinite}}@keyframes lt{{0%,91%,93.5%,96%,100%{{opacity:0}}92%,95%{{opacity:1}}}}
+.fg{{animation:fg ease-in-out infinite alternate}}@keyframes fg{{from{{transform:translateX(-60px)}}to{{transform:translateX(60px)}}}}
 .gl{{animation:gl 3.5s ease-in-out infinite alternate}}@keyframes gl{{from{{opacity:.6}}to{{opacity:1}}}}
 </style>
 <g clip-path="url(#c)">
@@ -173,7 +203,7 @@ def build(now_utc, season=None):
 
     # stars
     if nf > 0.05:
-        o.append(f'<g opacity="{nf:.2f}">')
+        o.append(f'<g opacity="{nf * max(0, 1 - ov * 1.6):.2f}">')
         for _ in range(130):
             x, y, r = rnd.uniform(0, W), rnd.uniform(0, 175), rnd.choice([.5, .6, .7, .9, 1.1, 1.5])
             cls = ' class="tw"' if r > .8 else ""
@@ -184,11 +214,11 @@ def build(now_utc, season=None):
     hx = W / 2 + max(-1, min(1, ha / 100)) * W * 0.45
     if elev > -4:
         sy = max(48, 200 - max(-4, elev) / 40 * 165)
-        o.append(f'<circle cx="{hx:.0f}" cy="{sy:.0f}" r="115" fill="url(#halo)"/><circle cx="{hx:.0f}" cy="{sy:.0f}" r="20" fill="#fff6d6"/>')
+        o.append(f'<g opacity="{max(.05, 1 - ov * 1.2):.2f}"><circle cx="{hx:.0f}" cy="{sy:.0f}" r="115" fill="url(#halo)"/><circle cx="{hx:.0f}" cy="{sy:.0f}" r="20" fill="#fff6d6"/></g>')
     else:
         mx, my = W - hx, 60
         o[1] = o[1].replace('cx="0" cy="0" r="0"', f'cx="{mx + 8:.0f}" cy="{my - 5}" r="17"')
-        o.append(f'<circle cx="{mx:.0f}" cy="{my}" r="80" fill="url(#halo)" opacity=".45"/><circle cx="{mx:.0f}" cy="{my}" r="18" fill="#eef0ff" mask="url(#cres)"/>')
+        o.append(f'<circle cx="{mx:.0f}" cy="{my}" r="80" fill="url(#halo)" opacity=".45"/><circle cx="{mx:.0f}" cy="{my}" r="18" fill="#eef0ff" mask="url(#cres)" opacity="{max(.08, 1 - ov * 1.3):.2f}"/>')
 
     # mountains, snow cap depth depends on season
     peaks = [(0, 196), (80, 168), (150, 186), (240, 126), (310, 166), (372, 150), (444, 182), (534, 116),
@@ -215,6 +245,18 @@ def build(now_utc, season=None):
         caps += poly([(x, y), a] + jag + [b])
     if caps:
         o.append(f'<path d="{caps}" fill="{p["msnow"]}" opacity=".92"/>')
+    # clouds
+    wr = random.Random(f"{weather}-{now_utc:%Y%m%d}")
+    n_cl = {"klar": 0 if nf > .5 else 3, "wolkig": 7, "regen": 9, "gewitter": 10, "nebel": 4, "schnee": 8}[weather]
+    for i in range(n_cl):
+        y, sc = wr.uniform(30, 125), wr.uniform(.7, 1.5)
+        shade = mix("#ffffff", "#5c6573", ov * .9)
+        cc = T(mix(shade, p["mid"], .25 + .5 * nf))
+        d = "".join(f"M{x - r:.0f} {y + dy:.0f}a{r:.0f} {r:.0f} 0 1 0 {2 * r:.0f} 0a{r:.0f} {r:.0f} 0 1 0 {-2 * r:.0f} 0"
+                    for x, dy, r in [(0, 0, 26 * sc), (30 * sc, -10 * sc, 30 * sc), (64 * sc, 2 * sc, 24 * sc), (-30 * sc, 6 * sc, 18 * sc), (92 * sc, 8 * sc, 16 * sc)])
+        d += f"M{-48 * sc:.0f} {y + 6 * sc:.0f}v{18 * sc:.0f}h{156 * sc:.0f}v{-18 * sc:.0f}Z"
+        dur = wr.uniform(140, 260) / (1.6 if weather == "gewitter" else 1)
+        o.append(f'<path class="cd" d="{d}" fill="{cc}" fill-rule="nonzero" opacity="{.92 if ov else .75}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s"/>')
     o.append(f'<rect y="135" width="{W}" height="110" fill="url(#fog)"/>')
 
     # canopy rows (far -> near). tower sits between row 2 and 3
@@ -259,7 +301,7 @@ def build(now_utc, season=None):
         o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6]))
 
     # birds (daylight, not deep winter)
-    if nf < .55:
+    if nf < .55 and ov < .6:
         for gi in range(2 if season != "winter" else 1):
             dur, y0 = rnd.uniform(38, 55), rnd.uniform(70, 120)
             o.append(f'<g class="bd" style="animation-duration:{dur:.0f}s;animation-delay:-{rnd.uniform(0, dur):.0f}s">')
@@ -280,7 +322,7 @@ def build(now_utc, season=None):
                      f'<g class="{sway}" style="animation-duration:{rnd.uniform(2.5, 5):.1f}s;animation-delay:-{rnd.uniform(0, 5):.1f}s">'
                      f'{make(x)}</g></g>')
 
-    if season == "winter":
+    if weather == "schnee":
         for n, a, b, op, spd, sw in ((70, .6, 1.2, .5, (16, 26), "sa"), (45, 1.3, 2.1, .75, (11, 17), "sa"), (16, 2.4, 3.6, .9, (7, 11), "sb")):
             falling(n, lambda x, a=a, b=b, op=op: f'<circle cx="{x:.0f}" cy="0" r="{rnd.uniform(a, b):.1f}" fill="#fff" opacity="{op}"/>', spd, sw)
     elif season == "autumn":
@@ -288,24 +330,44 @@ def build(now_utc, season=None):
         falling(26, lambda x: f'<path class="sp" style="animation-duration:{rnd.uniform(2.5, 6):.1f}s" d="M{x:.0f} 0 q4 -4 8 0 q-4 4 -8 0Z" fill="{T(rnd.choice(cols))}"/>', (12, 20), "sb")
     elif season == "spring":
         falling(18, lambda x: f'<ellipse class="sp" style="animation-duration:{rnd.uniform(3, 7):.1f}s" cx="{x:.0f}" cy="0" rx="2.6" ry="1.5" fill="{T(rnd.choice(["#f7c3d4", "#ffffff", "#f3a9c2"]))}"/>', (18, 28), "sb")
-    if season in ("summer", "spring") and nf > .45:
+    if season in ("summer", "spring") and nf > .45 and weather in ("klar", "wolkig"):
         for _ in range(30 if season == "summer" else 12):
             x, y = rnd.uniform(0, W), rnd.uniform(215, 300)
             o.append(f'<circle class="ff" cx="{x:.0f}" cy="{y:.0f}" r="1.6" fill="#e9ff8a" '
                      f'style="animation-duration:{rnd.uniform(2, 4):.1f}s;animation-delay:-{rnd.uniform(0, 4):.1f}s"/>')
 
+    # weather effects
+    if weather in ("regen", "gewitter"):
+        for _ in range(140 if weather == "gewitter" else 95):
+            x, dur = rnd.uniform(-20, W + 60), rnd.uniform(.55, 1.0)
+            o.append(f'<path class="rn" d="M{x:.0f} 0 l-4 14" stroke="#cfd9e6" stroke-width="{rnd.uniform(.8, 1.4):.1f}" '
+                     f'opacity="{rnd.uniform(.35, .7):.2f}" style="animation-duration:{dur:.2f}s;animation-delay:-{rnd.uniform(0, dur):.2f}s"/>')
+    if weather == "gewitter":
+        bx = 330
+        o.append(f'<g class="lt"><rect width="{W}" height="{H}" fill="#e8eeff" opacity=".28"/>'
+                 f'<path d="M{bx} 40 L{bx - 14} 92 L{bx - 2} 92 L{bx - 18} 150 L{bx + 10} 84 L{bx - 2} 84 L{bx + 12} 40Z" fill="#fffbe6"/></g>')
+    if weather == "nebel":
+        o.append(f'<rect width="{W}" height="{H}" fill="{haze}" opacity=".32"/>')
+        for i, (y, h, op) in enumerate(((120, 110, .9), (185, 100, 1), (245, 100, .85))):
+            o.append(f'<rect class="fg" x="-80" y="{y}" width="{W + 160}" height="{h}" fill="url(#fog)" opacity="{op}" '
+                     f'style="animation-duration:{14 + i * 5}s;animation-delay:-{i * 4}s"/>')
+
+    o.append(f'<text x="31" y="56" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" '
+             f'letter-spacing="3" fill="#ffffff" opacity=".55">{SEASON_DE[season].upper()} \u00b7 {weather.upper()}</text>')
     o.append('</g></svg>')
     return "\n".join(o)
 
 
 if __name__ == "__main__":
     now = datetime.now(timezone.utc)
-    season = None
+    season = weather = None
+    if len(sys.argv) > 4:
+        weather = sys.argv[4]
     if len(sys.argv) > 2:  # preview: generate.py out.svg 2026-11-04T22:00 [season]
         now = datetime.fromisoformat(sys.argv[2]).replace(tzinfo=timezone.utc)
     if len(sys.argv) > 3:
         season = sys.argv[3]
     path = sys.argv[1] if len(sys.argv) > 1 else "banner.svg"
     with open(path, "w") as f:
-        f.write(build(now, season))
+        f.write(build(now, season, weather))
     print(f"wrote {path}")
