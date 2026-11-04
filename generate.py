@@ -230,6 +230,7 @@ def build(now_utc, season=None, weather=None):
 @keyframes la{{0%{{opacity:0;transform:translate(0,0)}}8%{{opacity:1}}40%{{transform:translate({40 + 90 * wind:.0f}px,10px)}}85%{{opacity:1}}100%{{opacity:0;transform:translate({70 + 170 * wind:.0f}px,95px)}}}}
 @keyframes lb{{0%{{opacity:0;transform:translate(0,0)}}8%{{opacity:1}}30%{{transform:translate({20 + 60 * wind:.0f}px,-14px)}}85%{{opacity:1}}100%{{opacity:0;transform:translate({60 + 200 * wind:.0f}px,70px)}}}}
 @keyframes lc{{0%{{opacity:0;transform:translate(0,0)}}10%{{opacity:1}}50%{{transform:translate({-10 + 40 * wind:.0f}px,40px)}}85%{{opacity:1}}100%{{opacity:0;transform:translate({10 + 110 * wind:.0f}px,110px)}}}}
+.an{{animation:an linear infinite alternate}}@keyframes an{{from{{transform:scaleX(1)}}to{{transform:scaleX(-1)}}}}
 .gl{{animation:gl 3.5s ease-in-out infinite alternate}}@keyframes gl{{from{{opacity:.6}}to{{opacity:1}}}}
 </style>
 <g clip-path="url(#c)">
@@ -393,44 +394,66 @@ def build(now_utc, season=None, weather=None):
     light = -1 if hx < W / 2 else 1
     lk = .2 * (1 - nf * .85)
     spawn = []
-    rows = [(206, 18, 30, .30, 9, .72, 0), (224, 26, 42, .32, 12, .54, 0), (246, 36, 58, .33, 17, .36, 20)]
+    rows = [(206, 18, 32, .24, 7, .72, 0), (224, 26, 46, .24, 9.5, .54, 0), (246, 36, 62, .23, 13, .36, 20)]
     for i, r in enumerate(rows):
         o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6], light=light, lk=lk))
         o.append(f'<rect y="{r[0] - 30}" width="{W}" height="50" fill="url(#fog)" opacity="{.75 if season == "autumn" else .5}"/>')
 
-    # ---- fire watchtower ----
+    # ---- fire lookout: steel lattice tower, glass cab, flat roof ----
     cx = 905
     lit = elev < 4 or ov >= .6
-    wood, dark, roof = T("#7a5236"), T("#4a3022"), T("#3a2a22")
-    legs = (f'<path d="M{cx-31} 152 L{cx-52} 330 M{cx+31} 152 L{cx+52} 330" stroke="{dark}" stroke-width="4.5"/>'
-            f'<path d="M{cx-14} 152 L{cx-22} 330 M{cx+14} 152 L{cx+22} 330" stroke="{mix(dark, haze, .25)}" stroke-width="3"/>')
-    br = ""
-    for y1, y2 in ((156, 205), (205, 258), (258, 312)):
-        w1, w2 = 31 + (y1 - 152) * 0.118, 31 + (y2 - 152) * 0.118
-        br += f"M{cx-w1:.1f} {y1} L{cx+w2:.1f} {y2} M{cx+w1:.1f} {y1} L{cx-w2:.1f} {y2} M{cx-w2:.1f} {y2} L{cx+w2:.1f} {y2}"
-    stairs = "".join(f"M{cx-10} {y} L{cx+10} {y+16}" for y in range(160, 300, 16))
-    o.append(f'<g>{legs}<path d="{br}" stroke="{dark}" stroke-width="1.8" fill="none"/>'
-             f'<path d="{stairs}" stroke="{mix(wood, haze, .15)}" stroke-width="1.6" fill="none"/></g>')
+    steel, steel2 = T("#2a2e33"), T(mix("#2a2e33", haze, .35))
+    wall, roofc = T("#e8e4d8"), T("#3a3e43")
+    y0, yb = 134, 330
+    hw = lambda y: 34 + (y - y0) * (18 / (yb - y0))
+    tw = []
+    # back legs (lighter, further away)
+    tw.append(f'<path d="M{cx - 20} {y0} L{cx - 30} {yb} M{cx + 20} {y0} L{cx + 30} {yb}" stroke="{steel2}" stroke-width="2.2"/>')
+    # stairs zig-zag inside
+    st = ""
+    flights = [(y0 + 4 + i * 22, i % 2) for i in range(9)]
+    for y, flip in flights:
+        a1, a2 = (-1, 1) if flip else (1, -1)
+        st += f"M{cx + a1 * hw(y) * .55:.1f} {y} L{cx + a2 * hw(y + 22) * .55:.1f} {y + 22}"
+        st += f"M{cx + a1 * hw(y) * .55:.1f} {y - 5} L{cx + a2 * hw(y + 22) * .55:.1f} {y + 17}"
+    tw.append(f'<path d="{st}" stroke="{steel2}" stroke-width="1.3" fill="none"/>')
+    # front legs, girts, X braces
+    levels = [y0, 172, 212, 256, 304, yb]
+    br = f"M{cx - hw(y0):.1f} {y0} L{cx - hw(yb):.1f} {yb} M{cx + hw(y0):.1f} {y0} L{cx + hw(yb):.1f} {yb}"
+    xb = ""
+    for y1, y2 in zip(levels, levels[1:]):
+        w1, w2 = hw(y1), hw(y2)
+        xb += f"M{cx - w1:.1f} {y1} L{cx + w2:.1f} {y2} M{cx + w1:.1f} {y1} L{cx - w2:.1f} {y2} M{cx - w2:.1f} {y2} H{cx + w2:.1f}"
+    tw.append(f'<path d="{br}" stroke="{steel}" stroke-width="3.6"/><path d="{xb}" stroke="{steel}" stroke-width="1.4" fill="none"/>')
+    # solar panel on the left leg
+    sx = cx - hw(150)
+    tw.append(f'<path d="M{sx - 1:.1f} 146 L{sx - 15:.1f} 149 L{sx - 15:.1f} 176 L{sx - 1:.1f} 172Z" fill="{T("#1c2838")}"/>'
+              f'<path d="M{sx - 8:.1f} 147.5 V174 M{sx - 1:.1f} 159 L{sx - 15:.1f} 162" stroke="{T("#4a6a8c")}" stroke-width=".7"/>')
+    o.append("<g>" + "".join(tw) + "</g>")
     if lit:
-        o.append(f'<circle class="gl" cx="{cx}" cy="124" r="{70 + 40 * nf:.0f}" fill="url(#warm)" opacity="{.35 + .65 * nf:.2f}"/>')
-    glass = "#ffc96e" if lit else T(mix("#a9cbe6", p["bot"], .3))
+        o.append(f'<circle class="gl" cx="{cx}" cy="110" r="{70 + 40 * nf:.0f}" fill="url(#warm)" opacity="{.35 + .65 * nf:.2f}"/>')
+    glass = "#ffc96e" if lit else T(mix("#26303a", p["bot"], .18))
+    mull = "".join(f"M{cx - 38 + i * 7.6:.1f} 101 v20" for i in range(1, 10))
+    rail_posts = "".join(f"M{cx - 50 + i * 10:.0f} 116 v16" for i in range(11))
+    an_dur = max(.12, .6 - wind * .3)
     o.append(f'''<g>
-<rect x="{cx-34}" y="104" width="68" height="46" fill="{wood}"/>
-<rect x="{cx-28}" y="111" width="56" height="21" fill="{glass}"/>
-<path d="M{cx-7} 132 v-9 a4 4 0 0 1 8 0 v9Z M{cx-6} 120 h9 v-3 h-9Z" fill="{T("#22160f")}"/>
-<path d="M{cx-14} 111 v21 M{cx} 111 v21 M{cx+14} 111 v21" stroke="{dark}" stroke-width="2"/>
-<path d="M{cx-34} 120 h68" stroke="{dark}" stroke-width="1" opacity=".4"/>
-<rect x="{cx-48}" y="149" width="96" height="5" fill="{dark}"/>
-<path d="M{cx-46} 134 h92 {''.join(f'M{cx-46+i*11.5:.1f} 134 v15' for i in range(9))}" stroke="{dark}" stroke-width="1.6"/>
-<path d="M{cx-46} 107 L{cx} 82 L{cx+46} 107Z" fill="{roof}"/>
-{f'<path d="M{cx-48} 106 L{cx} 79 L{cx+48} 106 L{cx+40} 105 L{cx} 86 L{cx-40} 105Z" fill="{T("#eef3fa", .8)}"/>' if season == "winter" else ''}
-<path d="M{cx} 82 V56" stroke="{dark}" stroke-width="1.6"/>
-<path class="fl" d="M{cx+1} 57 q8 -2 15 1 q4 1 8 0 v9 q-4 1 -8 0 q-7 -3 -15 -1Z" fill="{T("#c8402e")}"/>
-<circle cx="{cx}" cy="55" r="1.8" fill="{T("#d9b35a")}"/>
+<rect x="{cx - 38}" y="96" width="76" height="36" fill="{wall}"/>
+<rect x="{cx - 38}" y="101" width="76" height="20" fill="{glass}"/>
+{'' if lit else f'<path d="M{cx - 30} 121 L{cx - 18} 101 H{cx - 12} L{cx - 24} 121Z M{cx + 6} 121 L{cx + 18} 101 H{cx + 21} L{cx + 9} 121Z" fill="#ffffff" opacity=".13"/>'}
+<path d="M{cx + 4} 121 v-6 a4 4 0 0 1 8 0 v6Z M{cx + 5} 112 a3 3 0 1 1 6 0 a3 3 0 1 1 -6 0Z" fill="{T("#15110e")}"/>
+<path d="{mull}" stroke="{T("#c9c4b6")}" stroke-width="1.2"/>
+<rect x="{cx - 51}" y="132" width="102" height="4" fill="{steel}"/>
+<path d="M{cx - 50} 116 H{cx + 50} M{cx - 50} 124 H{cx + 50} {rail_posts}" stroke="{steel}" stroke-width="1.3"/>
+<path d="M{cx - 48} 96 H{cx + 48} L{cx + 46} 90 H{cx - 46}Z" fill="{roofc}"/>
+<rect x="{cx - 48}" y="96" width="96" height="1.6" fill="{wall}" opacity=".6"/>
+{f'<path d="M{cx - 49} 91 q0 -5 6 -5 H{cx + 43} q6 0 6 5Z" fill="{T("#eef3fa", .8)}"/>' if season == "winter" else ''}
+<path d="M{cx - 22} 90 V80 M{cx + 16} 90 V60 M{cx + 11} 72 H{cx + 21}" stroke="{steel}" stroke-width="1.4"/>
+<path class="fl" d="M{cx + 17} 63 q6 -1.5 11 1 q3 1 6 0 v7 q-3 1 -6 0 q-5 -2.5 -11 -1Z" fill="{T("#c8402e")}"/>
+<g class="an" style="transform-origin:{cx + 16}px 59px;animation-duration:{an_dur:.2f}s"><path d="M{cx + 10} 59 H{cx + 22}" stroke="{steel}" stroke-width="1"/><circle cx="{cx + 10}" cy="59" r="1.5" fill="{steel}"/><circle cx="{cx + 22}" cy="59" r="1.5" fill="{steel}"/></g>
 </g>''')
 
     # near rows hide the bottom of the tower
-    for r in [(274, 52, 80, .34, 24, .16, 26), (306, 72, 112, .36, 34, 0, 30)]:
+    for r in [(274, 52, 88, .22, 18, .16, 26), (306, 74, 124, .22, 25, 0, 30)]:
         o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6], light=light, lk=lk, sway=True, spawn=spawn))
 
     # birds (daylight, not deep winter)
