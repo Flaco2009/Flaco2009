@@ -206,6 +206,7 @@ def build(now_utc, season=None, weather=None):
 <linearGradient id="fog" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{haze}" stop-opacity="0"/><stop offset=".7" stop-color="{haze}" stop-opacity=".6"/><stop offset="1" stop-color="{haze}" stop-opacity="0"/></linearGradient>
 <radialGradient id="halo"><stop offset="0" stop-color="#fff4c4" stop-opacity=".85"/><stop offset=".35" stop-color="#fff4c4" stop-opacity=".22"/><stop offset="1" stop-color="#fff4c4" stop-opacity="0"/></radialGradient>
 <radialGradient id="bolt"><stop offset="0" stop-color="#e6edff" stop-opacity=".8"/><stop offset="1" stop-color="#e6edff" stop-opacity="0"/></radialGradient>
+<linearGradient id="met" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#fff"/></linearGradient>
 <radialGradient id="warm"><stop offset="0" stop-color="#ffc36a" stop-opacity=".75"/><stop offset="1" stop-color="#ffc36a" stop-opacity="0"/></radialGradient>
 <mask id="cres"><rect width="{W}" height="{H}" fill="#fff"/><circle id="mc" cx="0" cy="0" r="0" fill="#000"/></mask>
 <clipPath id="c"><rect width="{W}" height="{H}" rx="14"/></clipPath>
@@ -231,6 +232,8 @@ def build(now_utc, season=None, weather=None):
 @keyframes lb{{0%{{opacity:0;transform:translate(0,0)}}8%{{opacity:1}}30%{{transform:translate({20 + 60 * wind:.0f}px,-14px)}}85%{{opacity:1}}100%{{opacity:0;transform:translate({60 + 200 * wind:.0f}px,70px)}}}}
 @keyframes lc{{0%{{opacity:0;transform:translate(0,0)}}10%{{opacity:1}}50%{{transform:translate({-10 + 40 * wind:.0f}px,40px)}}85%{{opacity:1}}100%{{opacity:0;transform:translate({10 + 110 * wind:.0f}px,110px)}}}}
 .an{{animation:an linear infinite alternate}}@keyframes an{{from{{transform:scaleX(1)}}to{{transform:scaleX(-1)}}}}
+.ms{{opacity:0;animation:ms linear infinite}}@keyframes ms{{0%{{opacity:0;transform:translate(0,0)}}1.5%{{opacity:1}}6%{{opacity:0;transform:translate(-190px,76px)}}100%{{opacity:0;transform:translate(-190px,76px)}}}}
+.xl{{animation:xl 1.4s steps(2,jump-none) infinite alternate}}@keyframes xl{{from{{opacity:.3}}to{{opacity:1}}}}
 .gl{{animation:gl 3.5s ease-in-out infinite alternate}}@keyframes gl{{from{{opacity:.6}}to{{opacity:1}}}}
 </style>
 <g clip-path="url(#c)">
@@ -254,6 +257,15 @@ def build(now_utc, season=None, weather=None):
         mx, my = max(230, W - hx), 60
         o[1] = o[1].replace('cx="0" cy="0" r="0"', f'cx="{mx + 8:.0f}" cy="{my - 5}" r="17"')
         o.append(f'<circle cx="{mx:.0f}" cy="{my}" r="80" fill="url(#halo)" opacity=".45"/><circle cx="{mx:.0f}" cy="{my}" r="18" fill="#eef0ff" mask="url(#cres)" opacity="{max(.08, 1 - ov * 1.3):.2f}"/>')
+
+    # shooting stars, every night when the sky is open
+    if nf > .55 and ov < .6:
+        mr = random.Random(f"meteor{now_utc:%Y%m%d}")
+        for dur in (9, 14, 23):
+            x, y = mr.uniform(250, 1150), mr.uniform(15, 70)
+            o.append(f'<g class="ms" style="animation-duration:{dur}s;animation-delay:-{mr.uniform(0, dur):.1f}s">'
+                     f'<path d="M{x:.0f} {y:.0f} l75 -30" stroke="url(#met)" stroke-width="1.6" stroke-linecap="round"/>'
+                     f'<circle cx="{x:.0f}" cy="{y:.0f}" r="1.6" fill="#fff"/><circle cx="{x:.0f}" cy="{y:.0f}" r="5" fill="#fff" opacity=".25"/></g>')
 
     # mountains, snow cap depth depends on season
     peaks = [(0, 196), (80, 168), (150, 186), (240, 126), (310, 166), (372, 150), (444, 182), (534, 116),
@@ -451,6 +463,38 @@ def build(now_utc, season=None, weather=None):
 <path class="fl" d="M{cx + 17} 63 q6 -1.5 11 1 q3 1 6 0 v7 q-3 1 -6 0 q-5 -2.5 -11 -1Z" fill="{T("#c8402e")}"/>
 <g class="an" style="transform-origin:{cx + 16}px 59px;animation-duration:{an_dur:.2f}s"><path d="M{cx + 10} 59 H{cx + 22}" stroke="{steel}" stroke-width="1"/><circle cx="{cx + 10}" cy="59" r="1.5" fill="{steel}"/><circle cx="{cx + 22}" cy="59" r="1.5" fill="{steel}"/></g>
 </g>''')
+
+    # christmas lights on the lookout in december
+    if now_utc.month == 12:
+        cols = ["#ff4d4d", "#ffd34d", "#4dff88", "#4dc3ff"]
+        bulbs = []
+        for i in range(25):  # roof edge, draped in 4 swags
+            t = i / 24
+            x = cx - 48 + 96 * t
+            bulbs.append((x, 98.5 + 3.5 * abs(math.sin(math.pi * t * 4))))
+        for i in range(29):  # railing
+            t = i / 28
+            bulbs.append((cx - 50 + 100 * t, 116.5 + 2.5 * abs(math.sin(math.pi * t * 5))))
+        wire = "M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in bulbs[:25]) + " M" + " L".join(f"{x:.1f} {y:.1f}" for x, y in bulbs[25:])
+        xl = [f'<path d="{wire}" stroke="{steel}" stroke-width=".6" fill="none"/>']
+        for j, (x, y) in enumerate(bulbs):
+            c = cols[j % 4]
+            d = f"animation-delay:-{(j % 3) * .47:.2f}s"
+            if nf > .3:
+                xl.append(f'<circle class="xl" cx="{x:.1f}" cy="{y:.1f}" r="2.8" fill="{c}" opacity="{.22 * nf:.2f}" style="{d}"/>')
+            xl.append(f'<circle class="xl" cx="{x:.1f}" cy="{y:.1f}" r="1" fill="{c}" style="{d}"/>')
+        # little tree on the catwalk + star on the mast
+        tx = cx - 43
+        xl.append(f'<path d="M{tx} 112 L{tx - 7} 124 H{tx - 3} L{tx - 9} 132 H{tx + 9} L{tx + 3} 124 H{tx + 7}Z" fill="{T("#1f5a3a")}"/>')
+        for k, (lx, ly) in enumerate(((tx - 3, 121), (tx + 3, 125), (tx - 5, 129), (tx + 4, 130), (tx, 117))):
+            xl.append(f'<circle class="xl" cx="{lx}" cy="{ly}" r="1.2" fill="{cols[k % 4]}" style="animation-delay:-{k * .3:.1f}s"/>')
+        sp = []
+        for k in range(10):
+            a = -math.pi / 2 + k * math.pi / 5
+            rr = 4.5 if k % 2 == 0 else 2
+            sp.append((cx + 16 + rr * math.cos(a), 54 + rr * math.sin(a)))
+        xl.append(f'<circle class="gl" cx="{cx + 16}" cy="54" r="12" fill="url(#halo)"/><path d="{poly(sp)}" fill="#ffd45e"/>')
+        o.append("<g>" + "".join(xl) + "</g>")
 
     # near rows hide the bottom of the tower
     for r in [(274, 52, 88, .22, 18, .16, 26), (306, 74, 124, .22, 25, 0, 30)]:
