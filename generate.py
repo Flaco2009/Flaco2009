@@ -106,7 +106,7 @@ def conifer(rnd, x, base, h, wf):
             notch = (x + s * ww * 0.48, yb - h * 0.035)
             ax, ay = prev
             bx, by = tip
-            snow.append([(ax, ay), (bx, by - .4), (ax + (bx - ax) * .6, ay + (by - ay) * .6 + max(1.6, h * .045))])
+            snow.append([(ax, ay), (bx, by - .4), (ax + (bx - ax) * .55, ay + (by - ay) * .55 + max(2.4, h * .08))])
             pts += [tip, notch]
             prev = notch
         pts.append((x + s * w * 1.02, H + 10))
@@ -250,7 +250,7 @@ def build(now_utc, season=None, weather=None):
         sy = max(48, 200 - max(-4, elev) / 40 * 165)
         o.append(f'<g opacity="{max(.05, 1 - ov * 1.2):.2f}"><circle cx="{hx:.0f}" cy="{sy:.0f}" r="115" fill="url(#halo)"/><circle cx="{hx:.0f}" cy="{sy:.0f}" r="20" fill="#fff6d6"/></g>')
     else:
-        mx, my = W - hx, 60
+        mx, my = max(230, W - hx), 60
         o[1] = o[1].replace('cx="0" cy="0" r="0"', f'cx="{mx + 8:.0f}" cy="{my - 5}" r="17"')
         o.append(f'<circle cx="{mx:.0f}" cy="{my}" r="80" fill="url(#halo)" opacity=".45"/><circle cx="{mx:.0f}" cy="{my}" r="18" fill="#eef0ff" mask="url(#cres)" opacity="{max(.08, 1 - ov * 1.3):.2f}"/>')
 
