@@ -17,6 +17,8 @@ concurrency:
 
 jobs:
   deploy:
+    # only the original hosts the shared playground; copies use it via ?user=
+    if: github.repository_owner == 'Flaco2009'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

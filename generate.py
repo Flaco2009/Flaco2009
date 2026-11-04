@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Live fire-watchtower banner above a sea of treetops.
 Season follows the date, light follows the real sun position in Zurich."""
+import json
 import math
+import os
 import random
 import sys
 from datetime import datetime, timezone
@@ -11,7 +13,9 @@ W, H = 1200, 320
 
 
 # ---------- sun ----------
-def sun_position(now_utc):
+def sun_position(now_utc, lat=None, lon=None):
+    lat = LAT if lat is None else lat
+    lon = LON if lon is None else lon
     doy = now_utc.timetuple().tm_yday
     hour = now_utc.hour + now_utc.minute / 60
     g = 2 * math.pi / 365 * (doy - 1 + (hour - 12) / 24)
@@ -20,8 +24,8 @@ def sun_position(now_utc):
             - 0.002697 * math.cos(3 * g) + 0.00148 * math.sin(3 * g))
     eqt = 229.18 * (0.000075 + 0.001868 * math.cos(g) - 0.032077 * math.sin(g)
                     - 0.014615 * math.cos(2 * g) - 0.040849 * math.sin(2 * g))
-    ha = (hour * 60 + eqt + 4 * LON) / 4 - 180
-    lat = math.radians(LAT)
+    ha = (hour * 60 + eqt + 4 * lon) / 4 - 180
+    lat = math.radians(lat)
     cz = math.sin(lat) * math.sin(decl) + math.cos(lat) * math.cos(decl) * math.cos(math.radians(ha))
     return 90 - math.degrees(math.acos(max(-1, min(1, cz)))), ha
 
@@ -181,8 +185,10 @@ def canopy(rnd, base, hmin, hmax, wf, spacing, k, S, haze, T, bloom_n=0, light=-
 
 
 # ---------- scene ----------
-def build(now_utc, season=None, weather=None):
-    elev, ha = sun_position(now_utc)
+def build(now_utc, season=None, weather=None, name="FLACO2009", lat=None, lon=None, xmas=None):
+    elev, ha = sun_position(now_utc, lat, lon)
+    xmas = now_utc.month == 12 if xmas is None else xmas
+    name = "".join(c for c in str(name).upper() if c.isalnum() or c in " -_.")[:24] or "LOOKOUT"
     season = season or season_of(now_utc)
     weather = weather or weather_of(now_utc, season)
     ov = OVERCAST[weather]
@@ -465,7 +471,7 @@ def build(now_utc, season=None, weather=None):
 </g>''')
 
     # christmas lights on the lookout in december
-    if now_utc.month == 12:
+    if xmas:
         cols = ["#ff4d4d", "#ffd34d", "#4dff88", "#4dc3ff"]
         bulbs = []
         for i in range(25):  # roof edge, draped in 4 swags
@@ -511,8 +517,8 @@ def build(now_utc, season=None, weather=None):
             o.append('</g>')
 
     # handle
-    o.append('<text x="30" y="38" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" '
-             'font-size="13" letter-spacing="5" fill="#ffffff" opacity=".75">FLACO2009</text>')
+    o.append(f'<text x="30" y="38" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" '
+             f'font-size="13" letter-spacing="5" fill="#ffffff" opacity=".75">{name}</text>')
 
     # season particles
     def falling(n, make, spd=(16, 26), sway="sa"):
@@ -564,16 +570,46 @@ def build(now_utc, season=None, weather=None):
     return "\n".join(o)
 
 
+def load_config(path):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def apply_config(cfg, now):
+    """Turn config.json into build() arguments. An expired override is ignored."""
+    owner = os.environ.get("GITHUB_REPOSITORY_OWNER", "")
+    kw = dict(name=cfg.get("name") or owner or "LOOKOUT",
+              lat=cfg.get("lat"), lon=cfg.get("lon"))
+    ov = cfg.get("override") or {}
+    until = ov.get("until")
+    if ov and (not until or datetime.fromisoformat(until.replace("Z", "+00:00")) > now):
+        if ov.get("weather") in OVERCAST:
+            kw["weather"] = ov["weather"]
+        if ov.get("season") == "december":
+            kw["season"], kw["xmas"] = "winter", True
+        elif ov.get("season") in SEASON:
+            kw["season"] = ov["season"]
+        if ov.get("hour") is not None:
+            from zoneinfo import ZoneInfo
+            tz = ZoneInfo(cfg.get("tz") or "Europe/Zurich")
+            h = float(ov["hour"]) % 24
+            local = now.astimezone(tz).replace(hour=int(h), minute=int(h % 1 * 60), second=0, microsecond=0)
+            now = local.astimezone(timezone.utc)
+    return now, kw
+
+
 if __name__ == "__main__":
     now = datetime.now(timezone.utc)
-    season = weather = None
-    if len(sys.argv) > 4:
-        weather = sys.argv[4]
-    if len(sys.argv) > 2:  # preview: generate.py out.svg 2026-11-04T22:00 [season]
-        now = datetime.fromisoformat(sys.argv[2]).replace(tzinfo=timezone.utc)
-    if len(sys.argv) > 3:
-        season = sys.argv[3]
     path = sys.argv[1] if len(sys.argv) > 1 else "banner.svg"
+    if len(sys.argv) > 2:  # preview: generate.py out.svg 2026-11-04T22:00 [season] [weather]
+        now = datetime.fromisoformat(sys.argv[2]).replace(tzinfo=timezone.utc)
+        kw = dict(season=sys.argv[3] if len(sys.argv) > 3 else None,
+                  weather=sys.argv[4] if len(sys.argv) > 4 else None, name="FLACO2009")
+    else:
+        now, kw = apply_config(load_config(os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")), now)
     with open(path, "w") as f:
-        f.write(build(now, season, weather))
+        f.write(build(now, **kw))
     print(f"wrote {path}")
