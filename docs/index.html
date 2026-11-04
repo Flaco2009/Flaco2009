@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lookout · Flaco2009</title>
+<meta name="description" content="Live-Banner: Feuerwachturm über den Baumspitzen. Wetter, Jahreszeit und Uhrzeit selbst einstellen.">
+<style>
+:root{--bg:#0b0f1a;--panel:#121829;--line:#243049;--text:#e6ebf5;--muted:#8a95ad;--accent:#ffc96e}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:40px 16px}
+h1{font-size:13px;letter-spacing:6px;font-weight:500;color:var(--muted);margin:0 0 18px}
+.stage{width:100%;max-width:1200px;aspect-ratio:1200/320;border-radius:14px;overflow:hidden;background:#141b2e;position:relative;box-shadow:0 20px 60px #0008}
+.stage svg{width:100%;height:100%;display:block}
+.loading{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:13px;letter-spacing:2px}
+.bar{display:flex;gap:12px;margin-top:22px;flex-wrap:wrap;justify-content:center}
+.btn{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:10px 18px 10px 14px;font:inherit;cursor:pointer;transition:border-color .15s,transform .15s}
+.btn:hover{border-color:#3a4a6e;transform:translateY(-1px)}
+.btn[aria-expanded=true]{border-color:var(--accent)}
+.btn svg{width:20px;height:20px;flex:none}
+.btn small{color:var(--muted);font-size:12px}
+.panel{margin-top:14px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;display:none;flex-wrap:wrap;gap:8px;justify-content:center;max-width:720px;width:100%}
+.panel.open{display:flex}
+.chip{background:transparent;border:1px solid var(--line);color:var(--text);border-radius:999px;padding:7px 14px;font:inherit;font-size:13px;cursor:pointer}
+.chip:hover{border-color:#3a4a6e}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#1b1408}
+.time{width:100%;display:flex;flex-direction:column;align-items:center;gap:10px}
+.time output{font-size:28px;letter-spacing:2px}
+input[type=range]{width:100%;max-width:560px;accent-color:var(--accent)}
+.ticks{width:100%;max-width:560px;display:flex;justify-content:space-between;color:var(--muted);font-size:11px}
+.foot{margin-top:28px;color:var(--muted);font-size:12px;text-align:center}
+.foot a{color:var(--text)}
+</style>
+</head>
+<body>
+<h1>FLACO2009 · LOOKOUT</h1>
+<div class="stage" id="stage"><div class="loading" id="loading">LADE BANNER …</div></div>
+
+<div class="bar">
+  <button class="btn" data-panel="weather" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#ffc96e" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.5 1.5M17.2 17.2l1.5 1.5M5.3 18.7l1.5-1.5M17.2 6.8l1.5-1.5"/></svg>
+    Wetter <small id="lw">auto</small></button>
+  <button class="btn" data-panel="season" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#9fd7ff" stroke-width="1.8" stroke-linecap="round"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/><circle cx="8.5" cy="14.5" r="1" fill="#9fd7ff"/><circle cx="12" cy="14.5" r="1" fill="#9fd7ff"/></svg>
+    Jahreszeit <small id="ls">auto</small></button>
+  <button class="btn" data-panel="time" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#b6ffb0" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+    Uhrzeit <small id="lt">jetzt</small></button>
+</div>
+
+<div class="panel" id="p-weather"></div>
+<div class="panel" id="p-season"></div>
+<div class="panel" id="p-time">
+  <div class="time">
+    <output id="clock">--:--</output>
+    <input type="range" id="hour" min="0" max="23.75" step="0.25">
+    <div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+    <button class="chip" id="now">jetzt</button>
+  </div>
+</div>
+
+<div class="foot">Der echte Banner auf <a href="https://github.com/Flaco2009">github.com/Flaco2009</a> läuft live nach Zürich-Zeit,<br>Jahreszeit nach Datum und zufälligem Wetter (wechselt alle 3 Stunden).</div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script>
+const WEATHER = [["auto","auto"],["klar","klar"],["wolkig","wolkig"],["regen","regen"],["gewitter","gewitter"],["nebel","nebel"],["schnee","schnee"]];
+const SEASONS = [["auto","auto"],["spring","frühling"],["summer","sommer"],["autumn","herbst"],["winter","winter"],["december","dezember"]];
+const DATES = {spring:[2026,3,15], summer:[2026,6,15], autumn:[2026,9,20], winter:[2027,0,20], december:[2026,11,20]};
+const q = new URLSearchParams(location.search);
+const state = {w: q.get("w") || "auto", s: q.get("s") || "auto", h: q.has("t") ? +q.get("t") : null};
+
+function chips(el, list, key, label){
+  el.innerHTML = "";
+  for (const [v, txt] of list){
+    const b = document.createElement("button");
+    b.className = "chip" + (state[key] === v ? " on" : ""); b.textContent = txt;
+    b.onclick = () => { state[key] = v; chips(el, list, key, label); label.textContent = txt; render(); };
+    el.appendChild(b);
+  }
+  label.textContent = list.find(x => x[0] === state[key])[1];
+}
+chips(document.getElementById("p-weather"), WEATHER, "w", document.getElementById("lw"));
+chips(document.getElementById("p-season"), SEASONS, "s", document.getElementById("ls"));
+
+function openPanel(name){
+  document.querySelectorAll(".btn").forEach(b => {
+    const on = b.dataset.panel === name && b.getAttribute("aria-expanded") !== "true";
+    b.setAttribute("aria-expanded", on);
+    document.getElementById("p-" + b.dataset.panel).classList.toggle("open", on);
+  });
+}
+document.querySelectorAll(".btn").forEach(b => b.onclick = () => openPanel(b.dataset.panel));
+if (q.get("open")) openPanel(q.get("open"));
+
+const hour = document.getElementById("hour"), clock = document.getElementById("clock");
+const fmt = h => String(Math.floor(h)).padStart(2,"0") + ":" + String(Math.round(h % 1 * 60)).padStart(2,"0");
+function zurichNowHour(){
+  const p = new Intl.DateTimeFormat("de-CH",{timeZone:"Europe/Zurich",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date());
+  return +p.find(x=>x.type==="hour").value + +p.find(x=>x.type==="minute").value/60;
+}
+function syncClock(){
+  const h = state.h ?? zurichNowHour();
+  hour.value = h; clock.textContent = fmt(h);
+  document.getElementById("lt").textContent = state.h === null ? "jetzt" : fmt(h);
+}
+hour.oninput = () => { state.h = +hour.value; syncClock(); render(); };
+document.getElementById("now").onclick = () => { state.h = null; syncClock(); render(); };
+syncClock();
+
+// local Zurich wall time -> UTC (CET/CEST)
+function utcFor(){
+  const now = new Date();
+  let y, m, d;
+  if (state.s === "auto") {
+    const p = new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Zurich"}).format(now).split("-");
+    [y, m, d] = [+p[0], +p[1]-1, +p[2]];
+  } else [y, m, d] = DATES[state.s];
+  if (state.h === null && state.s === "auto") return now;
+  const h = state.h ?? zurichNowHour();
+  const guess = new Date(Date.UTC(y, m, d, Math.floor(h), Math.round(h % 1 * 60)));
+  const zh = new Date(guess.toLocaleString("en-US",{timeZone:"Europe/Zurich"}));
+  const utc = new Date(guess.toLocaleString("en-US",{timeZone:"UTC"}));
+  return new Date(guess.getTime() - (zh - utc));
+}
+
+let py, busy = false, again = false;
+async function render(){
+  const u = new URLSearchParams();
+  if (state.w !== "auto") u.set("w", state.w);
+  if (state.s !== "auto") u.set("s", state.s);
+  if (state.h !== null) u.set("t", state.h);
+  history.replaceState(null, "", u.toString() ? "?" + u : location.pathname);
+  if (!py) return;
+  if (busy) { again = true; return; }
+  busy = true;
+  const season = state.s === "auto" ? null : state.s === "december" ? "winter" : state.s;
+  py.globals.set("ARGS", py.toPy([utcFor().toISOString().slice(0,16), season, state.w === "auto" ? null : state.w]));
+  const svg = py.runPython(`from datetime import datetime, timezone
+_t, _s, _w = ARGS
+build(datetime.fromisoformat(_t).replace(tzinfo=timezone.utc), _s, _w)`);
+  document.getElementById("stage").innerHTML = svg;
+  busy = false;
+  if (again) { again = false; render(); }
+}
+
+(async () => {
+  py = await loadPyodide();
+  const src = await (await fetch("generate.py", {cache: "no-store"})).text();
+  py.runPython(src.replace('if __name__ == "__main__":', 'if False:'));
+  render();
+  setInterval(() => { if (state.h === null) { syncClock(); render(); } }, 60000);
+})().catch(e => { document.getElementById("loading").textContent = "FEHLER BEIM LADEN: " + e.message; });
+</script>
+</body>
+</html>
