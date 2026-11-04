@@ -193,6 +193,7 @@ def build(now_utc, season=None, weather=None):
 .fl{{transform-box:fill-box;transform-origin:left center;animation:fl 1.6s ease-in-out infinite alternate}}@keyframes fl{{from{{transform:skewY(-6deg) scaleX(.92)}}to{{transform:skewY(5deg) scaleX(1)}}}}
 .bd{{animation:bd linear infinite}}@keyframes bd{{from{{transform:translateX(-120px)}}to{{transform:translateX({W + 120}px)}}}}
 .wg{{transform-box:fill-box;transform-origin:center;animation:wg .45s ease-in-out infinite alternate}}@keyframes wg{{from{{transform:scaleY(1)}}to{{transform:scaleY(-.5)}}}}
+.dk{{animation:dk linear infinite}}@keyframes dk{{from{{transform:translateX(0)}}to{{transform:translateX(-{W}px)}}}}
 .cd{{animation:cd linear infinite}}@keyframes cd{{from{{transform:translateX(-360px)}}to{{transform:translateX({W + 360}px)}}}}
 .rn{{animation:rn linear infinite}}@keyframes rn{{from{{transform:translate(0,-30px)}}to{{transform:translate(-40px,{H + 30}px)}}}}
 .lt{{opacity:0;animation:lt 7s linear infinite}}@keyframes lt{{0%,90%,91.6%,92.4%,95%,100%{{opacity:0}}90.4%{{opacity:1}}91.2%{{opacity:.3}}92.8%{{opacity:.9}}93.6%{{opacity:.2}}}}
@@ -246,31 +247,66 @@ def build(now_utc, season=None, weather=None):
         caps += poly([(x, y), a] + jag + [b])
     if caps:
         o.append(f'<path d="{caps}" fill="{p["msnow"]}" opacity=".92"/>')
-    # clouds
+    # puffy clouds: shadowed base + lit top, drifting at different speeds
     wr = random.Random(f"{weather}-{now_utc:%Y%m%d}")
-    n_cl = {"klar": 0 if nf > .5 else 3, "wolkig": 7, "regen": 9, "gewitter": 10, "nebel": 4, "schnee": 8}[weather]
+    n_cl = {"klar": 0 if nf > .5 else 3, "wolkig": 7, "regen": 5, "gewitter": 4, "nebel": 4, "schnee": 8}[weather]
+
+    def puff(cx, y, sc):
+        d = "".join(f"M{cx + x - r:.0f} {y + dy:.0f}a{r:.0f} {r:.0f} 0 1 0 {2 * r:.0f} 0a{r:.0f} {r:.0f} 0 1 0 {-2 * r:.0f} 0"
+                    for x, dy, r in [(0, 0, 26 * sc), (30 * sc, -12 * sc, 31 * sc), (64 * sc, 2 * sc, 24 * sc),
+                                     (-30 * sc, 6 * sc, 18 * sc), (92 * sc, 8 * sc, 16 * sc), (12 * sc, -26 * sc, 18 * sc)])
+        return d + f"M{cx - 48 * sc:.0f} {y + 6 * sc:.0f}v{18 * sc:.0f}h{156 * sc:.0f}v{-18 * sc:.0f}Z"
+
     for i in range(n_cl):
-        y, sc = wr.uniform(30, 125), wr.uniform(.7, 1.5)
-        shade = mix("#ffffff", "#5c6573", ov * .9)
-        cc = T(mix(shade, p["mid"], .25 + .5 * nf))
-        d = "".join(f"M{x - r:.0f} {y + dy:.0f}a{r:.0f} {r:.0f} 0 1 0 {2 * r:.0f} 0a{r:.0f} {r:.0f} 0 1 0 {-2 * r:.0f} 0"
-                    for x, dy, r in [(0, 0, 26 * sc), (30 * sc, -10 * sc, 30 * sc), (64 * sc, 2 * sc, 24 * sc), (-30 * sc, 6 * sc, 18 * sc), (92 * sc, 8 * sc, 16 * sc)])
-        d += f"M{-48 * sc:.0f} {y + 6 * sc:.0f}v{18 * sc:.0f}h{156 * sc:.0f}v{-18 * sc:.0f}Z"
-        dur = wr.uniform(140, 260) / (1.6 if weather == "gewitter" else 1)
-        o.append(f'<path class="cd" d="{d}" fill="{cc}" fill-rule="nonzero" opacity="{.92 if ov else .75}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s"/>')
+        y, sc = wr.uniform(38, 120), wr.uniform(.7, 1.5)
+        lightc = T(mix(mix("#ffffff", "#8a939f", ov * .8), p["mid"], .2 + .55 * nf))
+        darkc = T(mix(mix("#c9d3df", "#3f4651", ov), p["mid"], .25 + .5 * nf))
+        dur = wr.uniform(140, 260) / (1.6 if ov > .55 else 1)
+        o.append(f'<g class="cd" opacity="{.95 if ov else .8}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s">'
+                 f'<path d="{puff(0, y, sc)}" fill="{darkc}"/>'
+                 f'<path d="{puff(-3 * sc, y - 6 * sc, sc * .9)}" fill="{lightc}"/></g>')
     o.append(f'<rect y="135" width="{W}" height="110" fill="url(#fog)"/>')
 
-    # low cloud deck for rain / storm
+    # storm / rain cloud deck: three seamless layers rolling at different speeds
     if weather in ("regen", "gewitter"):
-        deck = mix("#59616e" if weather == "gewitter" else "#8a939f", "#0f1218", nf)
-        for layer, (yb, amp, op) in enumerate(((88, 14, .55), (74, 12, .8))):
-            d = f"M0 0 H{W} V{yb}"
-            x = W
-            while x > 0:
-                r = random.Random(f"deck{layer}{x}").uniform(22, 48)
-                d += f" A{r:.0f} {r * .55:.0f} 0 0 1 {max(0, x - 2 * r):.0f} {yb + random.Random(x).uniform(-amp, amp):.0f}"
-                x -= 2 * r
-            o.append(f'<path d="{d} Z" fill="{deck}" opacity="{op}"/>')
+        storm = weather == "gewitter"
+
+        def deck_path(seed, yb, amp, rmin, rmax):
+            rr = random.Random(seed)
+            radii = []
+            while sum(2 * r for r in radii) < W:
+                radii.append(rr.uniform(rmin, rmax))
+            k = W / sum(2 * r for r in radii)
+            radii = [r * k for r in radii]
+            ys = [yb + rr.uniform(-amp, amp) for _ in radii]
+            n = len(radii)
+            d, x = f"M0 -5 H{2 * W} V{ys[-1]:.1f}", 2 * W
+            for _ in range(2):
+                for i in range(n - 1, -1, -1):
+                    r = radii[i]
+                    x -= 2 * r
+                    d += f" A{r:.1f} {r * .62:.1f} 0 0 1 {x:.1f} {ys[i - 1]:.1f}"
+            return d + " V-5Z"
+
+        top_c = mix("#7d8693" if storm else "#b3bcc7", "#141821", nf)
+        bot_c = mix("#2f3540" if storm else "#7b8592", "#07090d", nf)
+        layers = [(98, 10, 24, 42, 170, .55), (84, 13, 30, 56, 115, .8), (66, 11, 38, 66, 75, 1)]
+        for li, (yb, amp, r1, r2, dur, op) in enumerate(layers):
+            o[1] = o[1].replace("</defs>", f'<linearGradient id="dk{li}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="{yb + amp}">'
+                                f'<stop offset="0" stop-color="{mix(top_c, bot_c, li * .2)}"/><stop offset="1" stop-color="{mix(bot_c, top_c, .15 * (2 - li))}"/></linearGradient></defs>', 1)
+            dur = dur / (1.5 if storm else 1)
+            o.append(f'<g class="dk" style="animation-duration:{dur:.0f}s"><path d="{deck_path(f"deck{li}", yb, amp, r1, r2)}" fill="url(#dk{li})" opacity="{op}"/></g>')
+        # ragged scud racing under the deck
+        for j in range(9 if storm else 6):
+            yy, rx = wr.uniform(92, 128), wr.uniform(40, 95)
+            dur = wr.uniform(35, 60) / (1.4 if storm else 1)
+            o.append(f'<ellipse class="cd" cx="0" cy="{yy:.0f}" rx="{rx:.0f}" ry="{rx * wr.uniform(.08, .14):.0f}" fill="{bot_c}" '
+                     f'opacity="{wr.uniform(.35, .6):.2f}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s"/>')
+        # lightning glowing inside the clouds
+        if storm:
+            for j, (gx, dur, delay) in enumerate(((180, 5.5, 1), (620, 8.5, 3.2), (1010, 13, 6), (430, 9.5, 7.5))):
+                o.append(f'<ellipse class="lt" cx="{gx}" cy="58" rx="150" ry="48" fill="url(#bolt)" '
+                         f'style="animation-duration:{dur}s;animation-delay:-{delay}s"/>')
 
     # lightning: jagged bolts with branches, strike behind the treeline
     flashes = []
