@@ -249,22 +249,39 @@ def build(now_utc, season=None, weather=None):
         o.append(f'<path d="{caps}" fill="{p["msnow"]}" opacity=".92"/>')
     # puffy clouds: shadowed base + lit top, drifting at different speeds
     wr = random.Random(f"{weather}-{now_utc:%Y%m%d}")
-    n_cl = {"klar": 0 if nf > .5 else 3, "wolkig": 7, "regen": 5, "gewitter": 4, "nebel": 4, "schnee": 8}[weather]
+    n_cl = {"klar": 0 if nf > .5 else 3, "wolkig": 7, "regen": 2, "gewitter": 0, "nebel": 4, "schnee": 8}[weather]
 
-    def puff(cx, y, sc):
-        d = "".join(f"M{cx + x - r:.0f} {y + dy:.0f}a{r:.0f} {r:.0f} 0 1 0 {2 * r:.0f} 0a{r:.0f} {r:.0f} 0 1 0 {-2 * r:.0f} 0"
-                    for x, dy, r in [(0, 0, 26 * sc), (30 * sc, -12 * sc, 31 * sc), (64 * sc, 2 * sc, 24 * sc),
-                                     (-30 * sc, 6 * sc, 18 * sc), (92 * sc, 8 * sc, 16 * sc), (12 * sc, -26 * sc, 18 * sc)])
-        return d + f"M{cx - 48 * sc:.0f} {y + 6 * sc:.0f}v{18 * sc:.0f}h{156 * sc:.0f}v{-18 * sc:.0f}Z"
+    def puff(rr, w):
+        """Cumulus: bell-shaped stack of lumps on a soft rounded base, no flat edges."""
+        n = rr.randint(7, 11)
+        parts, out = [], ""
+        for j in range(n):
+            t = j / (n - 1)
+            bell = math.sin(math.pi * t) ** 0.8
+            r = w * (0.07 + 0.13 * bell) * rr.uniform(0.8, 1.2)
+            cx = -w / 2 + w * t + rr.uniform(-w * .03, w * .03)
+            cy = -r * rr.uniform(0.35, 0.6) - bell * w * 0.06
+            parts.append((cx, cy, r))
+        for j in range(rr.randint(2, 4)):  # second tier of lumps on top
+            cx = rr.uniform(-w * .22, w * .22)
+            r = w * rr.uniform(.1, .16)
+            parts.append((cx, -w * rr.uniform(.13, .2), r))
+        for cx, cy, r in parts:
+            out += f"M{cx - r:.1f} {cy:.1f}a{r:.1f} {r:.1f} 0 1 0 {2 * r:.1f} 0a{r:.1f} {r:.1f} 0 1 0 {-2 * r:.1f} 0"
+        rx, ry = w * .5, w * .06
+        out += f"M{-rx:.1f} 0a{rx:.1f} {ry:.1f} 0 1 0 {2 * rx:.1f} 0a{rx:.1f} {ry:.1f} 0 1 0 {-2 * rx:.1f} 0"
+        return out
 
     for i in range(n_cl):
-        y, sc = wr.uniform(38, 120), wr.uniform(.7, 1.5)
+        y, w = wr.uniform(55, 125), wr.uniform(110, 260)
+        cr = random.Random(f"cloud{i}{weather}")
+        shape = puff(cr, w)
         lightc = T(mix(mix("#ffffff", "#8a939f", ov * .8), p["mid"], .2 + .55 * nf))
-        darkc = T(mix(mix("#c9d3df", "#3f4651", ov), p["mid"], .25 + .5 * nf))
-        dur = wr.uniform(140, 260) / (1.6 if ov > .55 else 1)
-        o.append(f'<g class="cd" opacity="{.95 if ov else .8}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s">'
-                 f'<path d="{puff(0, y, sc)}" fill="{darkc}"/>'
-                 f'<path d="{puff(-3 * sc, y - 6 * sc, sc * .9)}" fill="{lightc}"/></g>')
+        darkc = T(mix(mix("#c3cedb", "#3f4651", ov), p["mid"], .25 + .5 * nf))
+        dur = wr.uniform(160, 300) * (260 / w) ** .3
+        o.append(f'<g class="cd" opacity="{.95 if ov else .85}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s">'
+                 f'<g transform="translate(0 {y:.0f})"><path d="{shape}" fill="{darkc}"/>'
+                 f'<path d="{shape}" fill="{lightc}" transform="translate({-w * .02:.1f} {-w * .035:.1f}) scale(.94 .9)"/></g></g>')
     o.append(f'<rect y="135" width="{W}" height="110" fill="url(#fog)"/>')
 
     # storm / rain cloud deck: three seamless layers rolling at different speeds
@@ -301,7 +318,7 @@ def build(now_utc, season=None, weather=None):
             yy, rx = wr.uniform(92, 128), wr.uniform(40, 95)
             dur = wr.uniform(35, 60) / (1.4 if storm else 1)
             o.append(f'<ellipse class="cd" cx="0" cy="{yy:.0f}" rx="{rx:.0f}" ry="{rx * wr.uniform(.08, .14):.0f}" fill="{bot_c}" '
-                     f'opacity="{wr.uniform(.35, .6):.2f}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s"/>')
+                     f'opacity="{wr.uniform(.2, .35):.2f}" style="animation-duration:{dur:.0f}s;animation-delay:-{wr.uniform(0, dur):.0f}s"/>')
         # lightning glowing inside the clouds
         if storm:
             for j, (gx, dur, delay) in enumerate(((180, 5.5, 1), (620, 8.5, 3.2), (1010, 13, 6), (430, 9.5, 7.5))):
