@@ -38,7 +38,7 @@ WEATHER_ODDS = {
     "autumn": {"klar": 25, "wolkig": 30, "regen": 20, "nebel": 25},
     "winter": {"klar": 30, "wolkig": 20, "schnee": 35, "nebel": 15},
 }
-OVERCAST = {"klar": 0, "wolkig": .4, "regen": .62, "gewitter": .8, "nebel": .5, "schnee": .5}
+OVERCAST = {"klar": 0, "wolkig": .4, "regen": .62, "gewitter": .8, "nebel": .5, "schnee": .68}
 SEASON_DE = {"spring": "fr\u00fchling", "summer": "sommer", "autumn": "herbst", "winter": "winter"}
 
 
@@ -281,7 +281,7 @@ def build(now_utc, season=None, weather=None):
         o.append(f'<path d="{caps}" fill="{p["msnow"]}" opacity=".92"/>')
     # puffy clouds: shadowed base + lit top, drifting at different speeds
     wr = random.Random(f"{weather}-{now_utc:%Y%m%d}")
-    n_cl = {"klar": 0 if nf > .5 else 3, "wolkig": 7, "regen": 2, "gewitter": 0, "nebel": 4, "schnee": 8}[weather]
+    n_cl = {"klar": 0 if nf > .5 else 3, "wolkig": 7, "regen": 2, "gewitter": 0, "nebel": 4, "schnee": 0}[weather]
 
     def puff(rr, w):
         """Cumulus: bell-shaped stack of lumps on a soft rounded base, no flat edges."""
@@ -317,7 +317,7 @@ def build(now_utc, season=None, weather=None):
     o.append(f'<rect y="135" width="{W}" height="110" fill="url(#fog)"/>')
 
     # storm / rain cloud deck: three seamless layers rolling at different speeds
-    if weather in ("regen", "gewitter"):
+    if weather in ("regen", "gewitter", "schnee"):
         storm = weather == "gewitter"
 
         def deck_path(seed, yb, amp, rmin, rmax):
@@ -337,8 +337,8 @@ def build(now_utc, season=None, weather=None):
                     d += f" A{r:.1f} {r * .62:.1f} 0 0 1 {x:.1f} {ys[i - 1]:.1f}"
             return d + " V-5Z"
 
-        top_c = mix("#7d8693" if storm else "#b3bcc7", "#141821", nf)
-        bot_c = mix("#2f3540" if storm else "#7b8592", "#07090d", nf)
+        top_c = mix("#7d8693" if storm else "#c9d0d8" if weather == "schnee" else "#b3bcc7", "#141821", nf)
+        bot_c = mix("#2f3540" if storm else "#a2abb6" if weather == "schnee" else "#7b8592", "#07090d", nf)
         layers = [(98, 10, 24, 42, 170, .55), (84, 13, 30, 56, 115, .8), (66, 11, 38, 66, 75, 1)]
         for li, (yb, amp, r1, r2, dur, op) in enumerate(layers):
             o[1] = o[1].replace("</defs>", f'<linearGradient id="dk{li}" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="0" y2="{yb + amp}">'
@@ -456,7 +456,7 @@ def build(now_utc, season=None, weather=None):
                      f'{make(x)}</g></g>')
 
     if weather == "schnee":
-        for n, a, b, op, spd, sw in ((70, .6, 1.2, .5, (16, 26), "sa"), (45, 1.3, 2.1, .75, (11, 17), "sa"), (16, 2.4, 3.6, .9, (7, 11), "sb")):
+        for n, a, b, op, spd, sw in ((120, .7, 1.3, .55, (14, 22), "sa"), (80, 1.4, 2.3, .8, (9, 14), "sa"), (30, 2.6, 4.0, .95, (5.5, 8.5), "sb")):
             falling(n, lambda x, a=a, b=b, op=op: f'<circle cx="{x:.0f}" cy="0" r="{rnd.uniform(a, b):.1f}" fill="#fff" opacity="{op}"/>', spd, sw)
     elif season in ("autumn", "spring") and spawn:
         autumn = season == "autumn"
