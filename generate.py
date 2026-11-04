@@ -111,44 +111,70 @@ def conifer(rnd, x, base, h, wf):
             prev = notch
         pts.append((x + s * w * 1.02, H + 10))
         sides.append(pts)
-    return [*sides[0][::-1], apex, *sides[1]], snow
+    return [*sides[0][::-1], apex, *sides[1]], snow, sides, apex
 
 
-def crown(rnd, x, base, h):
-    r = h * 0.3
-    d = ""
-    for dx, dy, rr in ((0, -h * 0.62, r), (-r * 0.75, -h * 0.45, r * 0.85), (r * 0.75, -h * 0.47, r * 0.85)):
-        cx, cy, rr = x + dx, base + dy, rr * rnd.uniform(0.9, 1.1)
-        d += f"M{cx - rr:.1f} {cy:.1f}a{rr:.1f} {rr:.1f} 0 1 0 {2 * rr:.1f} 0a{rr:.1f} {rr:.1f} 0 1 0 {-2 * rr:.1f} 0"
-    d += poly([(x - r * 1.2, base - h * 0.42), (x + r * 1.2, base - h * 0.42), (x + r * 1.05, base - h * 0.1), (x + r * 1.7, H + 10), (x - r * 1.7, H + 10), (x - r * 1.05, base - h * 0.1)])
-    return d
+def circ(cx, cy, r):
+    return f"M{cx - r:.1f} {cy:.1f}a{r:.1f} {r:.1f} 0 1 0 {2 * r:.1f} 0a{r:.1f} {r:.1f} 0 1 0 {-2 * r:.1f} 0"
 
 
-def canopy(rnd, base, hmin, hmax, wf, spacing, k, S, haze, T, bloom_n=0):
-    groups, snow, blooms = {}, [], []
+def crown(rnd, x, base, h, light):
+    """Leafy dome: dark full silhouette, mid-tone lumps, sun-side highlights."""
+    R = h * 0.32
+    lumps = []
+    n = 7
+    for j in range(n):
+        t = j / (n - 1)
+        lumps.append((x + (t - .5) * 2 * R * .9 + rnd.uniform(-2, 2),
+                      base - h * .42 - math.sin(math.pi * t) * h * .22 + rnd.uniform(-2, 2),
+                      R * (.42 + .26 * math.sin(math.pi * t)) * rnd.uniform(.85, 1.15)))
+    for dx in (-.32, .3):
+        lumps.append((x + dx * R + rnd.uniform(-2, 2), base - h * .74 + rnd.uniform(-2, 2), R * rnd.uniform(.4, .5)))
+    body = poly([(x - R * 1.0, base - h * .42), (x + R * 1.0, base - h * .42), (x + R * 1.55, H + 10), (x - R * 1.55, H + 10)])
+    dark = "".join(circ(*l) for l in lumps) + body
+    mid = "".join(circ(cx + light * r * .12, cy - r * .16, r * .82) for cx, cy, r in lumps) + \
+        poly([(x - R * .9, base - h * .42), (x + R * .9, base - h * .42), (x + R * 1.3, base - h * .1), (x - R * 1.3, base - h * .1)])
+    hi = "".join(circ(cx + light * r * .28, cy - r * .32, r * .5) for cx, cy, r in lumps
+                 if (cx - x) * light > -R * .25 and cy < base - h * .5)
+    return dark, mid, hi
+
+
+def canopy(rnd, base, hmin, hmax, wf, spacing, k, S, haze, T, bloom_n=0, light=-1, lk=.2, sway=False, spawn=None):
+    groups, snow, blooms, trees = {}, [], [], []
     xs = [i * spacing + rnd.uniform(-spacing * .35, spacing * .35) for i in range(-1, int(W / spacing) + 2)]
     for x in xs:
         b = base + rnd.uniform(-4, 4) + 3 * math.sin(x / 90)
         h = rnd.uniform(hmin, hmax)
-        if S["acc"] and rnd.random() < S["acc_frac"]:
-            col = rnd.choice(S["acc"])
-            if S["round"] and rnd.random() < 0.38:
-                d = crown(rnd, x, b, h * 0.9)
-            else:
-                d = poly(conifer(rnd, x, b, h, wf)[0])
+        layers = []  # (color, d)
+        accent = S["acc"] and rnd.random() < S["acc_frac"]
+        col = rnd.choice(S["acc"]) if accent else rnd.choice(S["con"])
+        if accent and S["round"] and rnd.random() < 0.38:
+            dk, md, hi = crown(rnd, x, b, h * 0.9, light)
+            layers += [(mix(col, "#0b1610", .3), dk), (col, md)]
+            if hi:
+                layers.append((mix(col, "#fff1c4", lk * 1.4), hi))
         else:
-            col = rnd.choice(S["con"])
-            pts, sn = conifer(rnd, x, b, h, wf)
-            d = poly(pts)
+            pts, sn, sides, apex = conifer(rnd, x, b, h, wf)
+            li = 0 if light < 0 else 1
+            layers += [(mix(col, "#0b1610", .12), poly(pts)),
+                       (mix(col, "#fff1c4", lk), poly([apex] + sides[li] + [(x, H + 10)]))]
             if S["snowtips"]:
-                snow += [poly(q) for q in sn]
-        groups.setdefault(col, []).append(d)
+                layers.append(("#f4f7fc", "".join(poly(q) for q in sn)))
+        if accent and spawn is not None:
+            spawn.append((x, b - h * .6))
+        if sway:
+            trees.append((x, b, layers))
+        else:
+            for c, d in layers:
+                groups.setdefault(c, []).append(d)
     if S["bloom"] and bloom_n:
         for _ in range(bloom_n):
             blooms.append((rnd.uniform(0, W), base - rnd.uniform(-6, hmax * .5), rnd.choice(S["bloom"])))
-    out = "".join(f'<path d="{"".join(ds)}" fill="{T(mix(c, haze, k))}"/>' for c, ds in groups.items())
-    if snow:
-        out += f'<path d="{"".join(snow)}" fill="{T(mix("#f4f7fc", haze, k * .8), .8)}"/>'
+    fill = lambda c: T(mix(c, haze, k * (.8 if c == "#f4f7fc" else 1)), .8 if c == "#f4f7fc" else 1)
+    out = "".join(f'<path d="{"".join(ds)}" fill="{fill(c)}"/>' for c, ds in groups.items())
+    for x, b, layers in trees:
+        out += (f'<g class="sw" style="transform-origin:{x:.0f}px {b + 40:.0f}px;animation-duration:{rnd.uniform(2.6, 4.2):.1f}s;'
+                f'animation-delay:-{rnd.uniform(0, 4):.1f}s">' + "".join(f'<path d="{d}" fill="{fill(c)}"/>' for c, d in layers) + '</g>')
     for x, y, c in blooms:
         out += f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rnd.uniform(1.2, 2.4):.1f}" fill="{T(mix(c, haze, k))}"/>'
     return out
@@ -160,6 +186,7 @@ def build(now_utc, season=None, weather=None):
     season = season or season_of(now_utc)
     weather = weather or weather_of(now_utc, season)
     ov = OVERCAST[weather]
+    wind = {"klar": .2, "wolkig": .5, "regen": .9, "gewitter": 1.6, "nebel": 0, "schnee": .4}[weather]
     S = SEASON[season]
     p = sky(elev)
     if ov:
@@ -198,6 +225,11 @@ def build(now_utc, season=None, weather=None):
 .rn{{animation:rn linear infinite}}@keyframes rn{{from{{transform:translate(0,-30px)}}to{{transform:translate(-40px,{H + 30}px)}}}}
 .lt{{opacity:0;animation:lt 7s linear infinite}}@keyframes lt{{0%,90%,91.6%,92.4%,95%,100%{{opacity:0}}90.4%{{opacity:1}}91.2%{{opacity:.3}}92.8%{{opacity:.9}}93.6%{{opacity:.2}}}}
 .fg{{animation:fg ease-in-out infinite alternate}}@keyframes fg{{from{{transform:translateX(-60px)}}to{{transform:translateX(60px)}}}}
+.sw{{animation:sw ease-in-out infinite alternate}}@keyframes sw{{from{{transform:rotate({-.4 - wind * 1.1:.2f}deg)}}to{{transform:rotate({.3 + wind * 1.6:.2f}deg)}}}}
+.la,.lb,.lc{{opacity:0;animation:la ease-in infinite}}.lb{{animation-name:lb}}.lc{{animation-name:lc}}
+@keyframes la{{0%{{opacity:0;transform:translate(0,0)}}8%{{opacity:1}}40%{{transform:translate({40 + 90 * wind:.0f}px,10px)}}85%{{opacity:1}}100%{{opacity:0;transform:translate({70 + 170 * wind:.0f}px,95px)}}}}
+@keyframes lb{{0%{{opacity:0;transform:translate(0,0)}}8%{{opacity:1}}30%{{transform:translate({20 + 60 * wind:.0f}px,-14px)}}85%{{opacity:1}}100%{{opacity:0;transform:translate({60 + 200 * wind:.0f}px,70px)}}}}
+@keyframes lc{{0%{{opacity:0;transform:translate(0,0)}}10%{{opacity:1}}50%{{transform:translate({-10 + 40 * wind:.0f}px,40px)}}85%{{opacity:1}}100%{{opacity:0;transform:translate({10 + 110 * wind:.0f}px,110px)}}}}
 .gl{{animation:gl 3.5s ease-in-out infinite alternate}}@keyframes gl{{from{{opacity:.6}}to{{opacity:1}}}}
 </style>
 <g clip-path="url(#c)">
@@ -358,9 +390,12 @@ def build(now_utc, season=None, weather=None):
                      f'<path d="{" ".join(paths[1:])}" stroke="#ffffff" stroke-width=".9"/></g>')
 
     # canopy rows (far -> near). tower sits between row 2 and 3
+    light = -1 if hx < W / 2 else 1
+    lk = .2 * (1 - nf * .85)
+    spawn = []
     rows = [(206, 18, 30, .30, 9, .72, 0), (224, 26, 42, .32, 12, .54, 0), (246, 36, 58, .33, 17, .36, 20)]
     for i, r in enumerate(rows):
-        o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6]))
+        o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6], light=light, lk=lk))
         o.append(f'<rect y="{r[0] - 30}" width="{W}" height="50" fill="url(#fog)" opacity="{.75 if season == "autumn" else .5}"/>')
 
     # ---- fire watchtower ----
@@ -396,7 +431,7 @@ def build(now_utc, season=None, weather=None):
 
     # near rows hide the bottom of the tower
     for r in [(274, 52, 80, .34, 24, .16, 26), (306, 72, 112, .36, 34, 0, 30)]:
-        o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6]))
+        o.append(canopy(rnd, *r[:6], S, haze, T, bloom_n=r[6], light=light, lk=lk, sway=True, spawn=spawn))
 
     # birds (daylight, not deep winter)
     if nf < .55 and ov < .6:
@@ -423,11 +458,19 @@ def build(now_utc, season=None, weather=None):
     if weather == "schnee":
         for n, a, b, op, spd, sw in ((70, .6, 1.2, .5, (16, 26), "sa"), (45, 1.3, 2.1, .75, (11, 17), "sa"), (16, 2.4, 3.6, .9, (7, 11), "sb")):
             falling(n, lambda x, a=a, b=b, op=op: f'<circle cx="{x:.0f}" cy="0" r="{rnd.uniform(a, b):.1f}" fill="#fff" opacity="{op}"/>', spd, sw)
-    elif season == "autumn":
-        cols = ["#e0892b", "#cf5a2e", "#e8b440", "#b8412c"]
-        falling(26, lambda x: f'<path class="sp" style="animation-duration:{rnd.uniform(2.5, 6):.1f}s" d="M{x:.0f} 0 q4 -4 8 0 q-4 4 -8 0Z" fill="{T(rnd.choice(cols))}"/>', (12, 20), "sb")
-    elif season == "spring":
-        falling(18, lambda x: f'<ellipse class="sp" style="animation-duration:{rnd.uniform(3, 7):.1f}s" cx="{x:.0f}" cy="0" rx="2.6" ry="1.5" fill="{T(rnd.choice(["#f7c3d4", "#ffffff", "#f3a9c2"]))}"/>', (18, 28), "sb")
+    elif season in ("autumn", "spring") and spawn:
+        autumn = season == "autumn"
+        cols = ["#e0892b", "#cf5a2e", "#e8b440", "#b8412c"] if autumn else ["#f7c3d4", "#ffffff", "#f3a9c2"]
+        n = int((28 if autumn else 16) * (1 + wind))
+        for _ in range(n):
+            x, y = rnd.choice(spawn)
+            x += rnd.uniform(-14, 14)
+            dur = rnd.uniform(5, 9) / (1 + wind * .8)
+            shape = (f'<path class="sp" style="animation-duration:{rnd.uniform(1.5, 4):.1f}s" d="M-4 0 q4 -4 8 0 q-4 4 -8 0Z" fill="{T(rnd.choice(cols))}"/>'
+                     if autumn else
+                     f'<ellipse class="sp" style="animation-duration:{rnd.uniform(2, 5):.1f}s" rx="2.6" ry="1.5" fill="{T(rnd.choice(cols))}"/>')
+            o.append(f'<g transform="translate({x:.0f} {y:.0f})"><g class="{rnd.choice(["la", "lb", "lc"])}" '
+                     f'style="animation-duration:{dur:.1f}s;animation-delay:-{rnd.uniform(0, dur):.1f}s">{shape}</g></g>')
     if season in ("summer", "spring") and nf > .45 and weather in ("klar", "wolkig"):
         for _ in range(30 if season == "summer" else 12):
             x, y = rnd.uniform(0, W), rnd.uniform(215, 300)
